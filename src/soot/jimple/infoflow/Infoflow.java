@@ -241,6 +241,11 @@ public class Infoflow extends AbstractInfoflow {
 		if (sootConfig != null)
 			sootConfig.setSootOptions(Options.v());
 		
+		List<String> dump = new ArrayList<String>();
+		dump.add("ALL");
+		Options.v().set_dump_cfg(dump);
+		Options.v().set_dump_body(dump);
+		
 		// load all entryPoint classes with their bodies
 		Scene.v().loadNecessaryClasses();
 		logger.info("Basic class loading done.");
