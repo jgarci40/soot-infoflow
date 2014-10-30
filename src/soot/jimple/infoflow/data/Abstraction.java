@@ -38,7 +38,7 @@ import com.google.common.collect.Sets;
  * @author Steven Arzt
  * @author Christian Fritz
  */
-public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction> {
+public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction, Unit> {
 	
 	private static boolean flowSensitiveAliasing = true;
 	
@@ -50,12 +50,12 @@ public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction>
 	private Abstraction predecessor = null;
 	private Set<Abstraction> neighbors = null;
 	private Stmt currentStmt = null;
+	private Stmt correspondingCallSite = null;
 	
 	private SourceContext sourceContext = null;
 
 	// only used in path generation
 	private Set<SourceContextAndPath> pathCache = null;
-	private BitSet pathFlags = null;
 	
 	/**
 	 * Unit/Stmt which activates the taint when the abstraction passes it
@@ -79,6 +79,8 @@ public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction>
 	 * has been cut during alias analysis.
 	 */
 	private boolean dependsOnCutAP = false;
+	
+	private BitSet pathFlags = null;
 	
 	public Abstraction(Value taint, SourceInfo sourceInfo,
 			Value sourceVal, Stmt sourceStmt,
@@ -245,36 +247,31 @@ public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction>
 	 * @return The path from the source to the current statement
 	 */
 	public Set<SourceContextAndPath> getPaths() {
-		if (pathCache == null)
-			return Collections.emptySet();
-		return pathCache;
+		return pathCache == null ? null : Collections.unmodifiableSet(pathCache);
 	}
 	
 	public Set<SourceContextAndPath> getOrMakePathCache() {
 		// We're optimistic about having a path cache. If we definitely have one,
 		// we return it. Otherwise, we need to lock and create one.
-		if (this.pathCache != null)
-			return pathCache;
-		
-		synchronized (this) {
-			if (this.pathCache == null)
-				this.pathCache = new ConcurrentHashSet<SourceContextAndPath>();
-		}
-		return pathCache;
+		if (this.pathCache == null)
+			synchronized (this) {
+				if (this.pathCache == null)
+					this.pathCache = new ConcurrentHashSet<SourceContextAndPath>();
+			}
+		return Collections.unmodifiableSet(pathCache);
 	}
 	
-	public boolean registerPathFlag(int id) {
-		if (pathFlags != null && pathFlags.get(id))
-			return false;
-		
-		synchronized (this) {
-			if (pathFlags == null)
-				pathFlags = new BitSet();
-			pathFlags.set(id);
+	public boolean addPathElement(SourceContextAndPath scap) {
+		if (this.pathCache == null) {
+			synchronized (this) {
+				if (this.pathCache == null) {
+					this.pathCache = new ConcurrentHashSet<SourceContextAndPath>();
+				}
+			}
 		}
-		return true;
+		return this.pathCache.add(scap);
 	}
-
+	
 	public boolean isAbstractionActive() {
 		return activationUnit == null;
 	}
@@ -520,6 +517,14 @@ public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction>
 			this.neighbors.add(originalAbstraction);
 		}
 	}
+	
+	public void setCorrespondingCallSite(Stmt callSite) {
+		this.correspondingCallSite = callSite;
+	}
+	
+	public Stmt getCorrespondingCallSite() {
+		return this.correspondingCallSite;
+	}
 		
 	public static Abstraction getZeroAbstraction(boolean flowSensitiveAliasing) {
 		Abstraction zeroValue = new Abstraction(new JimpleLocal("zero", NullType.v()), new SourceInfo(false),
@@ -537,6 +542,25 @@ public class Abstraction implements Cloneable, FastSolverLinkedNode<Abstraction>
 	public void setCallingContext(Abstraction callingContext) {
 		// TODO Auto-generated method stub
 		
+	}
+	
+	/**
+	 * Registers that a worker thread with the given ID has already processed
+	 * this abstraction
+	 * @param id The ID of the worker thread
+	 * @return True if the worker thread with the given ID has not been
+	 * registered before, otherwise false
+	 */
+	public boolean registerPathFlag(int id) {
+		if (pathFlags != null && pathFlags.get(id))
+			return false;
+		
+		synchronized (this) {
+			if (pathFlags == null)
+				pathFlags = new BitSet();
+			pathFlags.set(id);
+		}
+		return true;
 	}
 	
 }

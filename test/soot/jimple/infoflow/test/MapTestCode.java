@@ -146,4 +146,18 @@ public class MapTestCode {
 		cm.publish(untaintedElement);
 	}
 	
+	private String append(String s) {
+		return s + "x";
+	}
+	
+	public void loopCallTest() {
+		String tainted = TelephonyManager.getDeviceId();
+		while (tainted.length() < 100) {
+			tainted = append(tainted);
+			tainted = append(tainted);
+		}
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(tainted);
+	}
+	
 }

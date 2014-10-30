@@ -1,8 +1,9 @@
 package soot.jimple.infoflow.data;
 
-import java.util.Collection;
+import heros.solver.Pair;
+
+import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedList;
 import java.util.List;
 
 import soot.Value;
@@ -16,10 +17,12 @@ import soot.jimple.infoflow.Infoflow;
  * @author Steven Arzt
  */
 public class SourceContextAndPath extends SourceContext implements Cloneable {
-	private final List<Stmt> path = new LinkedList<Stmt>();
+	private List<Stmt> path = null;
+	private List<Stmt> callStack = null;
+	private int hashCode = 0;
 	
 	public SourceContextAndPath(Value value, Stmt stmt) {
-		super(value, stmt);
+		this(value, stmt, null);
 	}
 	
 	public SourceContextAndPath(Value value, Stmt stmt, Object userData) {
@@ -27,21 +30,49 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 	}
 	
 	public List<Stmt> getPath() {
-		return Collections.unmodifiableList(this.path);
+		return path == null ? Collections.<Stmt>emptyList()
+				: Collections.unmodifiableList(this.path);
 	}
 	
 	public SourceContextAndPath extendPath(Stmt s) {
+		return extendPath(s, null);
+	}
+	
+	public SourceContextAndPath extendPath(Stmt s, Stmt correspondingCallSite) {
+		if (s == null && correspondingCallSite == null)
+			return this;
+		
 		SourceContextAndPath scap = clone();
-		scap.path.add(s);
+		if (s != null) {
+			if (scap.path == null)
+				scap.path = new ArrayList<Stmt>();
+			scap.path.add(0, s);
+		}
+		
+		// Extend the call stack
+		if (correspondingCallSite != null) {
+			if (scap.callStack == null)
+				scap.callStack = new ArrayList<Stmt>();
+			scap.callStack.add(0, correspondingCallSite);
+		}
+		
 		return scap;
 	}
 	
-	public SourceContextAndPath extendPath(Collection<Stmt> s) {
+	/**
+	 * Pops the top item off the call stack.
+	 * @return The new {@link SourceContextAndPath} object as the first element
+	 * of the pair and the call stack item that was popped off as the second
+	 * element. If there is no call stack, null is returned.
+	 */
+	public Pair<SourceContextAndPath, Stmt> popTopCallStackItem() {
+		if (callStack == null || callStack.isEmpty())
+			return null;
+		
 		SourceContextAndPath scap = clone();
-		scap.path.addAll(s);
-		return scap;
+		return new Pair<>(scap, scap.callStack.remove(0));
 	}
-
+	
 	@Override
 	public boolean equals(Object other) {
 		if (this == other)
@@ -49,6 +80,16 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 		if (other == null || getClass() != other.getClass())
 			return false;
 		SourceContextAndPath scap = (SourceContextAndPath) other;
+		
+		if (this.hashCode != 0 && scap.hashCode != 0 && this.hashCode != scap.hashCode)
+			return false;
+		
+		if (this.callStack == null) {
+			if (scap.callStack != null)
+				return false;
+		}
+		else if (!this.callStack.equals(scap.callStack))
+			return false;
 		
 		if (!Infoflow.getPathAgnosticResults() && !this.path.equals(scap.path))
 			return false;
@@ -58,15 +99,24 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 	
 	@Override
 	public int hashCode() {
-		return (!Infoflow.getPathAgnosticResults() ? 31 * path.hashCode() : 0)
-				+ 31 * super.hashCode();
+		if (hashCode != 0)
+			return hashCode;
+		
+		synchronized(this) {
+			hashCode = (!Infoflow.getPathAgnosticResults() ? 31 * path.hashCode() : 0)
+					+ 31 * (callStack == null ? 0 : callStack.hashCode())
+					+ 31 * super.hashCode();
+		}
+		return hashCode;
 	}
 	
 	@Override
-	public SourceContextAndPath clone() {
+	public synchronized SourceContextAndPath clone() {
 		final SourceContextAndPath scap = new SourceContextAndPath(getValue(), getStmt(), getUserData());
-		scap.path.addAll(this.path);
-		assert scap.equals(this);
+		if (path != null)
+			scap.path = new ArrayList<Stmt>(this.path);
+		if (callStack != null)
+			scap.callStack = new ArrayList<Stmt>(callStack);
 		return scap;
 	}
 	

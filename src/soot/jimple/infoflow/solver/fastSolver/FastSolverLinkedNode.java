@@ -8,8 +8,12 @@ import heros.solver.LinkedNode;
  * 
  * @author Steven Arzt
  */
-public interface FastSolverLinkedNode<D> extends LinkedNode<D> {
-
-	public void setPredecessor(D predecessor);
+public interface FastSolverLinkedNode<D, N> extends LinkedNode<D> {
 	
+	/**
+	 * Explicitly sets the predecessor of this node.
+	 * @param predecessor The predecessor node to set
+	 */
+	public void setPredecessor(D predecessor);
+		
 }

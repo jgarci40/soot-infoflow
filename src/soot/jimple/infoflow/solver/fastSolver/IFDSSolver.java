@@ -57,7 +57,7 @@ import com.google.common.cache.CacheBuilder;
  * @param <I> The type of inter-procedural control-flow graph being used.
  * @see IFDSTabulationProblem
  */
-public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInterproceduralCFG<N, M>> {
+public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiInterproceduralCFG<N, M>> {
 	
 	public static CacheBuilder<Object, Object> DEFAULT_CACHE_BUILDER = CacheBuilder.newBuilder().concurrencyLevel
 			(Runtime.getRuntime().availableProcessors()).initialCapacity(10000).softValues();
@@ -123,12 +123,15 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 	}
 
 	/**
-	 * Creates a solver for the given problem, constructing caches with the given {@link CacheBuilder}. The solver must then be started by calling
+	 * Creates a solver for the given problem, constructing caches with the
+	 * given {@link CacheBuilder}. The solver must then be started by calling
 	 * {@link #solve()}.
-	 * @param flowFunctionCacheBuilder A valid {@link CacheBuilder} or <code>null</code> if no caching is to be used for flow functions.
-	 * @param edgeFunctionCacheBuilder A valid {@link CacheBuilder} or <code>null</code> if no caching is to be used for edge functions.
+	 * @param tabulationProblem The tabulation problem to solve
+	 * @param flowFunctionCacheBuilder A valid {@link CacheBuilder} or
+	 * <code>null</code> if no caching is to be used for flow functions.
 	 */
-	public IFDSSolver(IFDSTabulationProblem<N,D,M,I> tabulationProblem, @SuppressWarnings("rawtypes") CacheBuilder flowFunctionCacheBuilder) {
+	public IFDSSolver(IFDSTabulationProblem<N,D,M,I> tabulationProblem,
+			@SuppressWarnings("rawtypes") CacheBuilder flowFunctionCacheBuilder) {
 		if(logger.isDebugEnabled())
 			flowFunctionCacheBuilder = flowFunctionCacheBuilder.recordStats();
 		this.zeroValue = tabulationProblem.zeroValue();
@@ -187,9 +190,15 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 		//this will cause new submissions to the executor to be rejected,
 		//but at this point all tasks should have completed anyway
 		executor.shutdown();
-		//similarly here: we await termination, but this should happen instantaneously,
-		//as all tasks should have completed
-		runExecutorAndAwaitCompletion();
+		
+		// Wait for the executor to be really gone
+		while (!executor.isTerminated()) {
+			try {
+				Thread.sleep(100);
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+		}
 	}
 
 	/**
@@ -275,7 +284,7 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 							//compute return-flow function
 							FlowFunction<D> retFunction = flowFunctions.getReturnFlowFunction(n, sCalledProcN, eP, retSiteN);
 							//for each target value of the function
-							for(D d5: computeReturnFlowFunction(retFunction, d4, n, Collections.singleton(d2))) {
+							for(D d5: computeReturnFlowFunction(retFunction, d4, n, Collections.singleton(d1))) {
 								// If we have not changed anything in the callee, we do not need the facts
 								// from there. Even if we change something: If we don't need the concrete
 								// path, we can skip the callee in the predecessor chain
@@ -283,12 +292,8 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 								if (d5.equals(d2))
 									d5p = d2;
 								else if (setJumpPredecessors)
-									d5.setPredecessor(d2);
-								
-								// Set the calling context
-								D d5p_restoredCtx = restoreContextOnReturnedFact(d2, d5p);
-								
-								propagate(d1, retSiteN, d5p_restoredCtx, n, false);
+									d5p.setPredecessor(d3);
+								propagate(d1, retSiteN, d5p, n, false);
 							}
 						}
 					}
@@ -365,23 +370,22 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 					FlowFunction<D> retFunction = flowFunctions.getReturnFlowFunction(c, methodThatNeedsSummary,n,retSiteC);
 					Set<D> targets = computeReturnFlowFunction(retFunction, d2, c, entry.getValue().keySet());
 					//for each incoming-call value
-					for(D d4: entry.getValue().keySet())
+					for(Entry<D, D> d1d2entry : entry.getValue().entrySet()) {
+						final D d4 = d1d2entry.getKey();
+						final D predVal = d1d2entry.getValue();
+						
 						for(D d5: targets) {
 							// If we have not changed anything in the callee, we do not need the facts
 							// from there. Even if we change something: If we don't need the concrete
 							// path, we can skip the callee in the predecessor chain
 							D d5p = d5;
-							D predVal = entry.getValue().get(d4);
 							if (d5.equals(predVal))
 								d5p = predVal;
 							else if (setJumpPredecessors)
-								d5.setPredecessor(predVal);
-							
-							// Set the calling context
-							D d5p_restoredCtx = restoreContextOnReturnedFact(d2, d5p);
-							
-							propagate(d4, retSiteC, d5p_restoredCtx, c, false);
+								d5p.setPredecessor(d1);
+							propagate(d4, retSiteC, d5p, c, false);
 						}
+					}
 				}
 			}
 		
@@ -445,29 +449,12 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D>,M,I extends BiDiInte
 	 * abstractions.
 	 * @param flowFunction The normal flow function to compute
 	 * @param d1 The abstraction at the method's start node
-	 * @param d1 The abstraction at the current node
+	 * @param d2 The abstraction at the current node
 	 * @return The set of abstractions at the successor node
 	 */
 	protected Set<D> computeNormalFlowFunction
 			(FlowFunction<D> flowFunction, D d1, D d2) {
 		return flowFunction.computeTargets(d2);
-	}
-	
-	/**
-	 * This method will be called for each incoming edge and can be used to
-	 * transfer knowledge from the calling edge to the returning edge, without
-	 * affecting the summary edges at the callee.
-	 * 
-	 * @param d4
-	 *            Fact stored with the incoming edge, i.e., present at the
-	 *            caller side
-	 * @param d5
-	 *            Fact that originally should be propagated to the caller.
-	 * @return Fact that will be propagated to the caller.
-	 */
-	protected D restoreContextOnReturnedFact(D d4, D d5) {
-		d5.setCallingContext(d4);
-		return d5;
 	}
 	
 	/**
