@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import soot.Value;
 import soot.jimple.Stmt;
 import soot.jimple.infoflow.Infoflow;
 
@@ -17,43 +16,89 @@ import soot.jimple.infoflow.Infoflow;
  * @author Steven Arzt
  */
 public class SourceContextAndPath extends SourceContext implements Cloneable {
-	private List<Stmt> path = null;
+	private List<Abstraction> path = null;
 	private List<Stmt> callStack = null;
 	private int hashCode = 0;
 	
-	public SourceContextAndPath(Value value, Stmt stmt) {
+	public SourceContextAndPath(AccessPath value, Stmt stmt) {
 		this(value, stmt, null);
 	}
 	
-	public SourceContextAndPath(Value value, Stmt stmt, Object userData) {
+	public SourceContextAndPath(AccessPath value, Stmt stmt, Object userData) {
 		super(value, stmt, userData);
 	}
 	
+	public List<Abstraction> getAbstractionPath() {
+		return path == null ? Collections.<Abstraction>emptyList()
+				: Collections.unmodifiableList(this.path);		
+	}
+	
 	public List<Stmt> getPath() {
-		return path == null ? Collections.<Stmt>emptyList()
-				: Collections.unmodifiableList(this.path);
+		if (path == null)
+			return Collections.<Stmt>emptyList();
+		List<Stmt> stmtPath = new ArrayList<Stmt>(this.path.size());
+		for (Abstraction abs : this.path)
+			if (abs.getCurrentStmt() != null)
+				stmtPath.add(abs.getCurrentStmt());
+		return stmtPath;
 	}
 	
-	public SourceContextAndPath extendPath(Stmt s) {
-		return extendPath(s, null);
+	/**
+	 * Extends the taint propagation path with the given abstraction
+	 * @param abs The abstraction to put on the taint propagation path
+	 * @return The new taint propagation path
+	 */
+	public SourceContextAndPath extendPath(Abstraction abs) {
+		return extendPath(abs, true);
 	}
 	
-	public SourceContextAndPath extendPath(Stmt s, Stmt correspondingCallSite) {
-		if (s == null && correspondingCallSite == null)
+	/**
+	 * Extends the taint propagation path with the given abstraction
+	 * @param abs The abstraction to put on the taint propagation path
+	 * @param trackPath True if the abstraction shall be put on the propagation
+	 * path even if does not change the call stack. This is for instance useful
+	 * if all statements involved in the taint propagation shall later be
+	 * reported.
+	 * @return The new taint propagation path
+	 */
+	public SourceContextAndPath extendPath(Abstraction abs, boolean trackPath) {
+		if (abs == null)
 			return this;
 		
+		// If we have no data at all, there is nothing we can do here
+		if (abs.getCurrentStmt() == null && abs.getCorrespondingCallSite() == null)
+			return this;
+		
+		// If we don't track paths and have nothing to put on the stack, there
+		// is no need to create a new object
+		if (abs.getCorrespondingCallSite() == null && !trackPath)
+			return this;
+		
+		// Do not add the very same abstraction over and over again
+		if (this.path != null) {
+			boolean found = false;
+			for (Abstraction a : this.path)
+				if (a == abs) {
+					found = true;
+					break;
+				}
+			if (found)
+				return this;
+		}
+		
 		SourceContextAndPath scap = clone();
-		if (s != null) {
+		if (trackPath && abs.getCurrentStmt() != null) {
 			if (scap.path == null)
-				scap.path = new ArrayList<Stmt>();
-			scap.path.add(0, s);
+				scap.path = new ArrayList<Abstraction>();
+			scap.path.add(0, abs);
 		}
 		
 		// Extend the call stack
-		if (correspondingCallSite != null) {
+		if (abs.getCorrespondingCallSite() != null
+				&& abs.getCorrespondingCallSite() != abs.getCurrentStmt()) {
 			if (scap.callStack == null)
 				scap.callStack = new ArrayList<Stmt>();
-			scap.callStack.add(0, correspondingCallSite);
+			scap.callStack.add(0, abs.getCorrespondingCallSite());
 		}
 		
 		return scap;
@@ -112,9 +157,9 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 	
 	@Override
 	public synchronized SourceContextAndPath clone() {
-		final SourceContextAndPath scap = new SourceContextAndPath(getValue(), getStmt(), getUserData());
+		final SourceContextAndPath scap = new SourceContextAndPath(getAccessPath(), getStmt(), getUserData());
 		if (path != null)
-			scap.path = new ArrayList<Stmt>(this.path);
+			scap.path = new ArrayList<Abstraction>(this.path);
 		if (callStack != null)
 			scap.callStack = new ArrayList<Stmt>(callStack);
 		return scap;

@@ -3,9 +3,11 @@ package soot.jimple.infoflow.data.pathBuilders;
 import heros.solver.CountingThreadPoolExecutor;
 import heros.solver.Pair;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Set;
 import java.util.Stack;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -15,10 +17,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import soot.jimple.Stmt;
-import soot.jimple.infoflow.InfoflowResults;
 import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AbstractionAtSink;
 import soot.jimple.infoflow.data.SourceContextAndPath;
+import soot.jimple.infoflow.results.InfoflowResults;
 import soot.jimple.infoflow.solver.IInfoflowCFG;
 
 /**
@@ -83,10 +85,9 @@ public class RecursivePathBuilder extends AbstractAbstractionPathBuilder {
 		if (curAbs.getSourceContext() != null) {
 			// Construct the path root
 			SourceContextAndPath sourceAndPath = new SourceContextAndPath
-					(curAbs.getSourceContext().getValue(),
+					(curAbs.getSourceContext().getAccessPath(),
 							curAbs.getSourceContext().getStmt(),
-							curAbs.getSourceContext().getUserData()).extendPath
-									(curAbs.getSourceContext().getStmt());
+							curAbs.getSourceContext().getUserData()).extendPath(curAbs);
 			cacheData.add(sourceAndPath);
 			
 			// Sources may not have predecessors
@@ -123,8 +124,8 @@ public class RecursivePathBuilder extends AbstractAbstractionPathBuilder {
 				// Otherwise, we have to check the predecessor
 				for (SourceContextAndPath curScap : getPaths(taskId,
 						curAbs.getPredecessor(), newCallStack)) {
-					SourceContextAndPath extendedPath = (curAbs.getCurrentStmt() == null || !reconstructPaths)
-							? curScap : curScap.extendPath(curAbs.getCurrentStmt());
+					SourceContextAndPath extendedPath = curScap.extendPath(curAbs,
+							reconstructPaths);
 					cacheData.add(extendedPath);
 				}
 			}
@@ -156,10 +157,14 @@ public class RecursivePathBuilder extends AbstractAbstractionPathBuilder {
 					initialStack.push(new Pair<Stmt, Set<Abstraction>>(null,
 							Collections.newSetFromMap(new IdentityHashMap<Abstraction,Boolean>())));
 		    		for (SourceContextAndPath context : getPaths(lastTaskId++,
-		    				abs.getAbstraction(), initialStack))
-						results.addResult(abs.getSinkValue(), abs.getSinkStmt(),
-								context.getValue(), context.getStmt(), context.getUserData(),
-								context.getPath(), abs.getSinkStmt());
+		    				abs.getAbstraction(), initialStack)) {
+		    			List<Stmt> newPath = new ArrayList<>(context.getPath());
+		    			newPath.add(abs.getSinkStmt());
+						results.addResult(abs.getAbstraction().getAccessPath(),
+								abs.getSinkStmt(),
+								context.getAccessPath(), context.getStmt(), context.getUserData(),
+								newPath);
+		    		}
 				}
 				
 			});

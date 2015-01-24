@@ -13,6 +13,7 @@ package soot.jimple.infoflow.taintWrappers;
 import java.util.Collections;
 import java.util.Set;
 
+import soot.SootMethod;
 import soot.Value;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.Stmt;
@@ -78,4 +79,14 @@ public class IdentityTaintWrapper extends AbstractTaintWrapper {
 		return false;
 	}
 
+	@Override
+	public boolean supportsCallee(SootMethod method) {
+		return true;
+	}
+
+	@Override
+	public boolean supportsCallee(Stmt callSite, IInfoflowCFG icfg) {
+		return true;
+	}
+	
 }

@@ -10,6 +10,8 @@
  ******************************************************************************/
 package soot.jimple.infoflow.taintWrappers;
 
+import heros.TwoElementSet;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -29,8 +31,10 @@ import soot.Scene;
 import soot.SootClass;
 import soot.SootMethod;
 import soot.Value;
+import soot.jimple.Constant;
 import soot.jimple.DefinitionStmt;
 import soot.jimple.InstanceInvokeExpr;
+import soot.jimple.InvokeExpr;
 import soot.jimple.Stmt;
 import soot.jimple.infoflow.data.AccessPath;
 import soot.jimple.infoflow.solver.IInfoflowCFG;
@@ -70,10 +74,27 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 	private boolean aggressiveMode = false;
 	private boolean alwaysModelEqualsHashCode = true;
 	
+	/**
+	 * The possible effects this taint wrapper can have on a method invocation
+	 */
 	private enum MethodWrapType {
+		/**
+		 * This method can create a new taint
+		 */
 		CreateTaint,
+		/**
+		 * This method can kill a taint
+		 */
 		KillTaint,
+		/**
+		 * This method has been explicitly excluded from taint wrapping, i.e.,
+		 * it neither creates nor kills taints even if the same method in the
+		 * parent class or an interfaces does. 
+		 */
 		Exclude,
+		/**
+		 * This method has not been named in the taint wrapper configuration
+		 */
 		NotRegistered
 	}
 	
@@ -158,7 +179,7 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 		// If the callee is a phantom class or has no body, we pass on the taint
 		if (method.isPhantom() || !method.hasActiveBody())
 			taints.add(taintedPath);
-
+		
 		// For the moment, we don't implement static taints on wrappers. Pass it on
 		// not to break anything
 		if(taintedPath.isStaticFieldRef())
@@ -180,6 +201,12 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 		final String subSig = method.getSubSignature();
 		boolean taintEqualsHashCode = alwaysModelEqualsHashCode
 				&& (subSig.equals("boolean equals(java.lang.Object)") || subSig.equals("int hashCode()"));
+		
+		// We need to handle some API calls explicitly as they do not really fit
+		// the model of our rules
+		if (method.getDeclaringClass().getName().equals("java.lang.String")
+				&& subSig.equals("void getChars(int,int,char[],int)"))
+			return handleStringGetChars(stmt.getInvokeExpr(), taintedPath);
 		
 		// If this is not one of the supported classes, we skip it
 		boolean isSupported = false;
@@ -239,6 +266,23 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 		return taints;
 	}
 	
+	/**
+	 * Explicitly handles String.getChars() which does not really fit our
+	 * declarative model
+	 * @param invokeExpr The invocation of String.getChars()
+	 * @param taintedPath The tainted access path
+	 * @return The set of new taints to pass on in the taint propagation
+	 */
+	private Set<AccessPath> handleStringGetChars(InvokeExpr invokeExpr,
+			AccessPath taintedPath) {
+		// If the base object is tainted, the third argument gets tainted as
+		// well
+		if (((InstanceInvokeExpr) invokeExpr).getBase() == taintedPath.getPlainValue())
+			return new TwoElementSet<AccessPath>(taintedPath, new AccessPath(
+					invokeExpr.getArg(2), true));
+		return Collections.singleton(taintedPath);
+	}
+
 	/**
 	 * Checks whether at least one method in the given class is registered in
 	 * the taint wrapper
@@ -449,4 +493,24 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 		return new EasyTaintWrapper(this);
 	}
 
+	@Override
+	public boolean supportsCallee(SootMethod method) {
+		return aggressiveMode
+				|| getMethodWrapType(method.getSubSignature(), method.getDeclaringClass()) 
+						== MethodWrapType.CreateTaint;
+	}
+	
+	@Override
+	public boolean supportsCallee(Stmt callSite, IInfoflowCFG icfg) {
+		if (!callSite.containsInvokeExpr()
+				|| !supportsCallee(callSite.getInvokeExpr().getMethod()))
+			return false;
+		
+		// We need at least one non-constant argument
+		for (Value val : callSite.getInvokeExpr().getArgs())
+			if (!(val instanceof Constant))
+				return true;
+		return false;
+	}
+		
 }

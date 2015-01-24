@@ -26,6 +26,7 @@ import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
 import soot.jimple.AssignStmt;
+import soot.jimple.FieldRef;
 import soot.jimple.StaticFieldRef;
 import soot.jimple.Stmt;
 import soot.jimple.toolkits.callgraph.Edge;
@@ -55,6 +56,8 @@ public class InfoflowCFG implements IInfoflowCFG {
 	
 	protected final Map<SootMethod, Map<SootField, StaticFieldUse>> staticFieldUses =
 			new ConcurrentHashMap<SootMethod, Map<SootField,StaticFieldUse>>();
+	protected final Map<SootMethod, Boolean> methodSideEffects =
+			new ConcurrentHashMap<SootMethod, Boolean>();
 	
 	protected final BiDiInterproceduralCFG<Unit, SootMethod> delegate; 
 	
@@ -77,7 +80,7 @@ public class InfoflowCFG implements IInfoflowCFG {
 		this(new JimpleBasedInterproceduralCFG());
 	}
 	
-	public InfoflowCFG(BiDiInterproceduralCFG<Unit,SootMethod> delegate) {
+	public InfoflowCFG(BiDiInterproceduralCFG<Unit, SootMethod> delegate) {
 		this.delegate = delegate;
 	}
 	
@@ -228,14 +231,14 @@ public class InfoflowCFG implements IInfoflowCFG {
 				if (assign.getLeftOp() instanceof StaticFieldRef) {
 					SootField sf = ((StaticFieldRef) assign.getLeftOp()).getField();
 					registerStaticVariableUse(method, sf, StaticFieldUse.Write);
-					if (!readOnly && variable.equals(variable))
+					if (!readOnly && variable.equals(sf))
 						return true;
 				}
 				
 				if (assign.getRightOp() instanceof StaticFieldRef) {
 					SootField sf = ((StaticFieldRef) assign.getRightOp()).getField();
 					registerStaticVariableUse(method, sf, StaticFieldUse.Read);
-					if (variable.equals(variable))
+					if (variable.equals(sf))
 						return true;
 				}
 			}
@@ -292,4 +295,52 @@ public class InfoflowCFG implements IInfoflowCFG {
 		entry.put(variable, newUse);
 	}
 
+	@Override
+	public boolean hasSideEffects(SootMethod method) {
+		return hasSideEffects(method, new HashSet<SootMethod>());
+	}
+	
+	private boolean hasSideEffects(SootMethod method, Set<SootMethod> runList) {
+		// Without a body, we cannot say much
+		if (!method.hasActiveBody())
+			return false;
+		
+		// Do not process the same method twice
+		if (!runList.add(method))
+			return false;
+		
+		// Do we already have an entry?
+		Boolean hasSideEffects = methodSideEffects.get(method);
+		if (hasSideEffects != null)
+			return hasSideEffects;
+		
+		// Scan for references to this variable
+		for (Unit u : method.getActiveBody().getUnits()) {
+			if (u instanceof AssignStmt) {
+				AssignStmt assign = (AssignStmt) u;
+				
+				if (assign.getLeftOp() instanceof FieldRef) {
+					methodSideEffects.put(method, true);
+					return true;
+				}
+			}
+			
+			if (((Stmt) u).containsInvokeExpr())
+				for (Iterator<Edge> edgeIt = Scene.v().getCallGraph().edgesOutOf(u); edgeIt.hasNext(); ) {
+					Edge e = edgeIt.next();
+					if (hasSideEffects(e.getTgt().method(), runList))
+						return true;
+				}
+		}
+		
+		// Variable is not read
+		methodSideEffects.put(method, false);
+		return false;
+	}
+	
+	@Override
+	public void notifyMethodChanged(SootMethod m) {
+		if (delegate instanceof JimpleBasedInterproceduralCFG)
+			((JimpleBasedInterproceduralCFG) delegate).initializeUnitToOwner(m);
+	}
 }

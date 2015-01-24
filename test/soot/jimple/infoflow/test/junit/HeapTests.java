@@ -10,27 +10,36 @@
  ******************************************************************************/
 package soot.jimple.infoflow.test.junit;
 
+import heros.InterproceduralCFG;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
 
 import soot.RefType;
 import soot.Scene;
 import soot.SootField;
+import soot.SootMethod;
+import soot.Unit;
+import soot.jimple.AssignStmt;
 import soot.jimple.DefinitionStmt;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.Stmt;
 import soot.jimple.infoflow.IInfoflow.AliasingAlgorithm;
 import soot.jimple.infoflow.Infoflow;
 import soot.jimple.infoflow.data.AccessPath;
+import soot.jimple.infoflow.entryPointCreators.DefaultEntryPointCreator;
+import soot.jimple.infoflow.results.InfoflowResults;
 import soot.jimple.infoflow.solver.IInfoflowCFG;
+import soot.jimple.infoflow.source.ISourceSinkManager;
+import soot.jimple.infoflow.source.SourceInfo;
 import soot.jimple.infoflow.taintWrappers.AbstractTaintWrapper;
-import soot.jimple.infoflow.test.utilclasses.TestWrapper;
 
 /**
  * tests aliasing of heap references
@@ -40,7 +49,6 @@ public class HeapTests extends JUnitTests {
 	@Test(timeout = 300000)
 	public void testForEarlyTermination() {
 		Infoflow infoflow = initInfoflow();
-		infoflow.setTaintWrapper(new TestWrapper());
 		List<String> epoints = new ArrayList<String>();
 		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void testForEarlyTermination()>");
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
@@ -50,7 +58,6 @@ public class HeapTests extends JUnitTests {
 	@Test(timeout = 300000)
 	public void testForLoop() {
 		Infoflow infoflow = initInfoflow();
-		infoflow.setTaintWrapper(new TestWrapper());
 		List<String> epoints = new ArrayList<String>();
 		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void testForLoop()>");
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
@@ -60,7 +67,6 @@ public class HeapTests extends JUnitTests {
 	@Test(timeout = 300000)
 	public void testForWrapper() {
 		Infoflow infoflow = initInfoflow();
-		infoflow.setTaintWrapper(new TestWrapper());
 		List<String> epoints = new ArrayList<String>();
 		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void testForWrapper()>");
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
@@ -111,7 +117,16 @@ public class HeapTests extends JUnitTests {
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
 		negativeCheckInfoflow(infoflow);
 	}
-
+	
+	@Test(timeout = 300000)
+	public void heapTest0b() {
+		Infoflow infoflow = initInfoflow();
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void methodTest0b()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
+		negativeCheckInfoflow(infoflow);
+	}
+	
 	@Test(timeout = 300000)
 	public void heapTest1() {
 		Infoflow infoflow = initInfoflow();
@@ -156,7 +171,19 @@ public class HeapTests extends JUnitTests {
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
 		checkInfoflow(infoflow, 1);
 	}
-
+	
+	@Test(timeout = 300000)
+	public void multiAliasNoRecusiveAPTest() {
+		Infoflow infoflow = initInfoflow();
+		boolean oldRecAPI = Infoflow.getUseRecursiveAccessPaths();
+		Infoflow.setUseRecursiveAccessPaths(false);
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void multiAliasTest()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
+		Infoflow.setUseRecursiveAccessPaths(oldRecAPI);
+		checkInfoflow(infoflow, 1);
+	}
+	
 	@Test(timeout = 300000)
 	public void overwriteAliasTest() {
 		boolean oldUseRecAP = Infoflow.getUseRecursiveAccessPaths();
@@ -439,6 +466,16 @@ public class HeapTests extends JUnitTests {
 				}
 
 				return res;
+			}
+
+			@Override
+			public boolean supportsCallee(SootMethod method) {
+				return false;
+			}
+
+			@Override
+			public boolean supportsCallee(Stmt callSite, IInfoflowCFG icfg) {
+				return false;
 			}
 		});
 
@@ -881,5 +918,96 @@ public class HeapTests extends JUnitTests {
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
 		negativeCheckInfoflow(infoflow);
 	}
-
+	
+	@Test(timeout = 300000)
+	public void aliasStrongUpdateTest() {
+		final String sinkMethod = "<soot.jimple.infoflow.test.HeapTestCode: "
+				+ "void leakData(soot.jimple.infoflow.test.HeapTestCode$Data)>";
+		final String sourceMethod = "<soot.jimple.infoflow.test.HeapTestCode: "
+				+ "soot.jimple.infoflow.test.HeapTestCode$Data getSecretData()>";
+		
+		Infoflow infoflow = initInfoflow();
+		infoflow.setInspectSources(false);
+		infoflow.setInspectSinks(false);
+		infoflow.setEnableImplicitFlows(false);
+		
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void aliasStrongUpdateTest()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints,
+				Collections.singleton(sourceMethod),
+				Collections.singleton(sinkMethod));
+		
+   	 	Assert.assertTrue(infoflow.isResultAvailable());
+   	 	InfoflowResults map = infoflow.getResults();
+		Assert.assertEquals(1, map.size());
+		Assert.assertTrue(map.containsSinkMethod(sinkMethod));
+		Assert.assertTrue(map.isPathBetweenMethods(sinkMethod, sourceMethod));
+	}
+	
+	@Test(timeout = 300000)
+	public void aliasStrongUpdateTest2() {
+		final String sinkMethod = "<soot.jimple.infoflow.test.HeapTestCode: "
+				+ "void leakData(soot.jimple.infoflow.test.HeapTestCode$Data)>";
+		final String sourceMethod = "<soot.jimple.infoflow.test.HeapTestCode: "
+				+ "soot.jimple.infoflow.test.HeapTestCode$Data getSecretData()>";
+		
+		Infoflow infoflow = initInfoflow();
+		infoflow.setInspectSources(false);
+		infoflow.setInspectSinks(false);
+		infoflow.setEnableImplicitFlows(false);
+		
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void aliasStrongUpdateTest2()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints,
+				Collections.singleton(sourceMethod),
+				Collections.singleton(sinkMethod));
+		
+   	 	Assert.assertTrue(infoflow.isResultAvailable());
+   	 	InfoflowResults map = infoflow.getResults();
+		Assert.assertEquals(1, map.size());
+		Assert.assertTrue(map.containsSinkMethod(sinkMethod));
+		Assert.assertTrue(map.isPathBetweenMethods(sinkMethod, sourceMethod));
+	}
+	
+	@Test(timeout = 300000)
+	public void aliasStrongUpdateTest3() {
+		final String sinkMethod = "<soot.jimple.infoflow.test.HeapTestCode: "
+				+ "void leakData(soot.jimple.infoflow.test.HeapTestCode$Data)>";
+		
+		Infoflow infoflow = initInfoflow();
+		infoflow.setInspectSources(false);
+		infoflow.setInspectSinks(false);
+		infoflow.setEnableImplicitFlows(false);
+		
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.HeapTestCode: void aliasStrongUpdateTest3()>");
+		infoflow.computeInfoflow(appPath, libPath, new DefaultEntryPointCreator(epoints),
+				new ISourceSinkManager() {
+			
+			@Override
+			public boolean isSink(Stmt sCallSite, InterproceduralCFG<Unit, SootMethod> cfg) {
+				return sCallSite.containsInvokeExpr()
+						&& sCallSite.getInvokeExpr().getMethod().getSignature().equals(sinkMethod);
+			}
+			
+			@Override
+			public SourceInfo getSourceInfo(Stmt sCallSite, InterproceduralCFG<Unit, SootMethod> cfg) {
+				if (sCallSite instanceof AssignStmt) {
+					AssignStmt assignStmt = (AssignStmt) sCallSite;
+					if (assignStmt.getRightOp().toString().contains("taintedBySourceSinkManager"))
+						return new SourceInfo(true);
+					else
+						return null;
+				}
+				return null;
+			}
+			
+		});
+		
+   	 	Assert.assertTrue(infoflow.isResultAvailable());
+   	 	InfoflowResults map = infoflow.getResults();
+		Assert.assertEquals(1, map.size());
+		Assert.assertTrue(map.containsSinkMethod(sinkMethod));
+	}
+	
 }

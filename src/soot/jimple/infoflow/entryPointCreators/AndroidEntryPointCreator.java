@@ -408,9 +408,9 @@ public class AndroidEntryPointCreator extends BaseEntryPointCreator implements I
 				Unit u = unitIt.next();
 				if (ifs != null && ifs.getTarget() == u) {
 					body.getUnits().remove(ifs);
-					ifs = null;
 					changed = true;
 				}
+				ifs = null;
 				if (u instanceof IfStmt)
 					ifs = (IfStmt) u;
 			}
@@ -489,6 +489,8 @@ public class AndroidEntryPointCreator extends BaseEntryPointCreator implements I
 		JNopStmt startWhileStmt = new JNopStmt();
 		JNopStmt endWhileStmt = new JNopStmt();
 		body.getUnits().add(startWhileStmt);
+		createIfStmt(endWhileStmt);
+		
 		boolean hasAdditionalMethods = false;
 		if (modelAdditionalMethods) {
 			for(SootMethod currentMethod : currentClass.getMethods()){
@@ -531,6 +533,8 @@ public class AndroidEntryPointCreator extends BaseEntryPointCreator implements I
 		JNopStmt startWhileStmt = new JNopStmt();
 		JNopStmt endWhileStmt = new JNopStmt();
 		body.getUnits().add(startWhileStmt);
+		createIfStmt(endWhileStmt);
+		
 		boolean hasAdditionalMethods = false;
 		if (modelAdditionalMethods) {
 			for(SootMethod currentMethod : currentClass.getMethods()){
@@ -570,12 +574,24 @@ public class AndroidEntryPointCreator extends BaseEntryPointCreator implements I
 		//lifecycle1:
 		//2. onStart:
 		searchAndBuildMethod(AndroidEntryPointConstants.SERVICE_ONSTART1, currentClass, entryPoints, classLocal);
+		
+		// onStartCommand can be called an arbitrary number of times, or never
+		JNopStmt beforeStartCommand = new JNopStmt();
+		JNopStmt afterStartCommand = new JNopStmt();		
+		body.getUnits().add(beforeStartCommand);
+		createIfStmt(afterStartCommand);
+		
 		searchAndBuildMethod(AndroidEntryPointConstants.SERVICE_ONSTART2, currentClass, entryPoints, classLocal);
+		createIfStmt(beforeStartCommand);
+		body.getUnits().add(afterStartCommand);
+		
 		//methods: 
 		//all other entryPoints of this class:
 		JNopStmt startWhileStmt = new JNopStmt();
 		JNopStmt endWhileStmt = new JNopStmt();
 		body.getUnits().add(startWhileStmt);
+		createIfStmt(endWhileStmt);
+		
 		boolean hasAdditionalMethods = false;
 		if (modelAdditionalMethods) {
 			for(SootMethod currentMethod : currentClass.getMethods()){
@@ -717,6 +733,7 @@ public class AndroidEntryPointCreator extends BaseEntryPointCreator implements I
 			JNopStmt startWhileStmt = new JNopStmt();
 			JNopStmt endWhileStmt = new JNopStmt();
 			body.getUnits().add(startWhileStmt);
+			createIfStmt(endWhileStmt);
 
 			// Add the callbacks
 			addCallbackMethods(currentClass);

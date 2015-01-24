@@ -24,8 +24,8 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 
 import soot.jimple.infoflow.Infoflow;
-import soot.jimple.infoflow.InfoflowResults;
 import soot.jimple.infoflow.config.ConfigForTest;
+import soot.jimple.infoflow.results.InfoflowResults;
 import soot.jimple.infoflow.taintWrappers.EasyTaintWrapper;
 /**
  * abstract super class of all test cases which handles initialization, keeps track of sources and sinks and allows to customize the tests (taintWrapper, debug)
@@ -116,14 +116,14 @@ public abstract class JUnitTests {
     }
     
     protected void negativeCheckInfoflow(Infoflow infoflow){
-    	if(infoflow.isResultAvailable()){
+    	// If the result is available, it must be empty. Otherwise, it is
+    	// implicitly ok since we don't expect to find anything anyway.
+    	if(infoflow.isResultAvailable()) {
 			InfoflowResults map = infoflow.getResults();
 			assertEquals(0, map.size());
 			assertFalse(map.containsSinkMethod(sink));
 			assertFalse(map.containsSinkMethod(sinkInt));
-		}else{
-				fail("result is not available");
-			}
+    	}
 	  }
     
     protected Infoflow initInfoflow(){
