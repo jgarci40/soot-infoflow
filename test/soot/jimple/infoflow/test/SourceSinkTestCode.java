@@ -21,10 +21,17 @@ public class SourceSinkTestCode {
 	
 	private class A extends Base {
 		private String data;
+		private String data2;
 		
 		public A(String data) {
 			this.data = data;
+			this.data2 = "foo";
 		}
+		
+		public String getData2() {
+			return data2;
+		}
+		
 	}
 	
 	private class B extends Base {
@@ -55,6 +62,35 @@ public class SourceSinkTestCode {
 		doSomething(a);
 		B b = getSecret2();
 		doSomething(b);
+	}
+	
+	public void testSourceAccessPaths() {
+		A a = getSecret();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(a.getData2());
+	}
+	
+	private void doLeakSecret2(A a) {
+		System.out.println(a.data2);
+	}
+	
+	public void testSinkAccessPaths() {
+		A a = getSecret();
+		doLeakSecret2(a);
+	}
+	
+	public void testSinkAccessPaths2() {
+		A a = getSecret();
+		a.data2 = a.data;
+		doLeakSecret2(a);
+	}
+
+	public void ifAsSinkTest() {
+		long x = System.currentTimeMillis();
+		if (x > 100)
+			System.out.println("Greater");
+		else
+			System.out.println("Smaller");
 	}
 	
 }

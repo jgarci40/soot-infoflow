@@ -2,42 +2,42 @@ package soot.jimple.infoflow.data.pathBuilders;
 
 import heros.solver.CountingThreadPoolExecutor;
 
-import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import soot.jimple.Stmt;
-import soot.jimple.infoflow.InfoflowResults;
 import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AbstractionAtSink;
+import soot.jimple.infoflow.results.InfoflowResults;
+import soot.jimple.infoflow.solver.cfg.IInfoflowCFG;
 
 /**
  * Class for reconstructing abstraction paths from sinks to source
  * 
  * @author Steven Arzt
  */
-public class ContextInsensitiveSourceFinder implements IAbstractionPathBuilder {
+public class ContextInsensitiveSourceFinder extends AbstractAbstractionPathBuilder {
 	
-	private AtomicInteger propagationCount = null;
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private final InfoflowResults results = new InfoflowResults();
 	private final CountingThreadPoolExecutor executor;
 	
-	private static int lastTaskId = 0;
+	private int lastTaskId = 0;
+	private int numTasks = 0;
 	
 	/**
 	 * Creates a new instance of the {@link ContextInsensitiveSourceFinder} class
+	 * @param icfg The interprocedural control flow graph
 	 * @param maxThreadNum The maximum number of threads to use
 	 */
-	public ContextInsensitiveSourceFinder(int maxThreadNum) {
+	public ContextInsensitiveSourceFinder(IInfoflowCFG icfg, int maxThreadNum) {
+		super(icfg, false);
         int numThreads = Runtime.getRuntime().availableProcessors();
 		this.executor = createExecutor(maxThreadNum == -1 ? numThreads
 				: Math.min(maxThreadNum, numThreads));
@@ -74,43 +74,42 @@ public class ContextInsensitiveSourceFinder implements IAbstractionPathBuilder {
 		public void run() {
 			while (!abstractionQueue.isEmpty()) {
 				Abstraction abstraction = abstractionQueue.remove(0);
-				propagationCount.incrementAndGet();
-								
+				
 				if (abstraction.getSourceContext() != null) {
 					// Register the result
-					results.addResult(flagAbs.getSinkValue(),
+					results.addResult(flagAbs.getAbstraction().getAccessPath(),
 							flagAbs.getSinkStmt(),
-							abstraction.getSourceContext().getValue(),
+							abstraction.getSourceContext().getAccessPath(),
 							abstraction.getSourceContext().getStmt(),
 							abstraction.getSourceContext().getUserData(),
-							Collections.<Stmt>emptyList());
+							null);
 					
 					// Sources may not have predecessors
 					assert abstraction.getPredecessor() == null;
 				}
 				else
-					if (abstraction.getPredecessor().registerPathFlag(taskId))
+					if (abstraction.getPredecessor().registerPathFlag(taskId, numTasks))
 						abstractionQueue.add(abstraction.getPredecessor());
 				
 				if (abstraction.getNeighbors() != null)
 					for (Abstraction nb : abstraction.getNeighbors())
-						if (nb.registerPathFlag(taskId))
+						if (nb.registerPathFlag(taskId, numTasks))
 							abstractionQueue.add(nb);
 			}
 		}
 	}
 	
 	@Override
-	public void computeTaintSources(final Set<AbstractionAtSink> res) {
+	public void computeTaintPaths(final Set<AbstractionAtSink> res) {
 		if (res.isEmpty())
 			return;
 		
 		long beforePathTracking = System.nanoTime();
-		propagationCount = new AtomicInteger();
     	logger.info("Obtainted {} connections between sources and sinks", res.size());
     	
     	// Start the propagation tasks
     	int curResIdx = 0;
+    	numTasks = res.size() + 1;
     	for (final AbstractionAtSink abs : res) {
     		logger.info("Building path " + ++curResIdx);
     		executor.execute(new SourceFindingTask(lastTaskId++, abs, abs.getAbstraction()));
@@ -123,13 +122,8 @@ public class ContextInsensitiveSourceFinder implements IAbstractionPathBuilder {
 			ex.printStackTrace();
 		}
     	
-    	logger.info("Path processing took {} seconds in total for {} edges",
-    			(System.nanoTime() - beforePathTracking) / 1E9, propagationCount.get());
-	}
-	
-	@Override
-	public void computeTaintPaths(final Set<AbstractionAtSink> res) {
-		throw new RuntimeException("Path reconstruction is not supported");
+    	logger.info("Path processing took {} seconds in total",
+    			(System.nanoTime() - beforePathTracking) / 1E9);
 	}
 	
 	@Override

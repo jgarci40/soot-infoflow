@@ -13,9 +13,13 @@ package soot.jimple.infoflow;
 import java.util.Collection;
 import java.util.List;
 
-import soot.Transform;
+import soot.jimple.infoflow.config.IInfoflowConfig;
+import soot.jimple.infoflow.data.pathBuilders.IPathBuilderFactory;
 import soot.jimple.infoflow.entryPointCreators.IEntryPointCreator;
+import soot.jimple.infoflow.handlers.PreAnalysisHandler;
 import soot.jimple.infoflow.ipc.IIPCManager;
+import soot.jimple.infoflow.nativ.INativeCallHandler;
+import soot.jimple.infoflow.results.InfoflowResults;
 import soot.jimple.infoflow.source.ISourceSinkManager;
 import soot.jimple.infoflow.taintWrappers.ITaintPropagationWrapper;
 /**
@@ -25,32 +29,17 @@ import soot.jimple.infoflow.taintWrappers.ITaintPropagationWrapper;
 public interface IInfoflow {
 	
 	/**
-	 * Enumeration containing the callgraph algorithms supported for the use with
-	 * the data flow tracker
+	 * Gets the configuration to be used for the data flow analysis
+	 * @return The configuration to be used for the data flow analysis
 	 */
-	public enum CallgraphAlgorithm {
-		AutomaticSelection,
-		CHA,
-		VTA,
-		RTA,
-		SPARK,
-		OnDemand
-	}
+	public InfoflowConfiguration getConfig();
 	
 	/**
-	 * Enumeration containing the aliasing algorithms supported by FlowDroid
+	 * Sets the configuration to be used for the data flow analysis
+	 * @param config The configuration to be used for the data flow analysis
 	 */
-	public enum AliasingAlgorithm {
-		/**
-		 * A fully flow-sensitive algorithm based on Andromeda
-		 */
-		FlowSensitive,
-		/**
-		 * A flow-insensitive algorithm based on Soot's point-to-sets
-		 */
-		PtsBased
-	}
-
+	public void setConfig(InfoflowConfiguration config);
+	
 	/**
 	 * Sets the taint wrapper for deciding on taint propagation through black-box
 	 * methods
@@ -60,27 +49,26 @@ public interface IInfoflow {
 	public void setTaintWrapper(ITaintPropagationWrapper wrapper);
 	
 	/**
+	 * Sets the handler class to be used for modeling the effects of native
+	 * methods on the taint state
+	 * @param handler The native call handler to use
+	 */
+	public void setNativeCallHandler(INativeCallHandler handler);
+	
+	/**
 	 * Gets the taint wrapper for deciding on taint propagation through black-box
 	 * methods
 	 * @return The taint wrapper object that decides on how information is
 	 * propagated through black-box methods
 	 */
 	public ITaintPropagationWrapper getTaintWrapper();
-
-	/**
-	 * Sets whether the information flow analysis shall stop after the first
-	 * flow has been found
-	 * @param stopAfterFirstFlow True if the analysis shall stop after the
-	 * first flow has been found, otherwise false.
-	 */
-	public void setStopAfterFirstFlow(boolean stopAfterFirstFlow);
 	
     /**
      * List of preprocessors that need to be executed in order before
      * the information flow.
      * @param preprocessors the pre-processors
      */
-    public void setPreProcessors(Collection<Transform> preprocessors);
+    public void setPreProcessors(Collection<? extends PreAnalysisHandler> preprocessors);
 
 	/**
 	 * Computes the information flow on a list of entry point methods. This list
@@ -110,8 +98,9 @@ public interface IInfoflow {
 	 * @param sinks list of sink class+method (as string conforms to SootMethod representation)
 	 */
 	public void computeInfoflow(String appPath, String libPath,
-			List<String> entryPoints, 
-			List<String> sources, List<String> sinks);
+			Collection<String> entryPoints, 
+			Collection<String> sources,
+			Collection<String> sinks);
 
 	/**
 	 * Computes the information flow on a single method. This method is
@@ -124,8 +113,8 @@ public interface IInfoflow {
 	 * @param sinks list of sink class+method (as string conforms to SootMethod representation)
 	 */
 	public void computeInfoflow(String appPath, String libPath, String entryPoint,
-			List<String> sources, List<String> sinks);
-
+			Collection<String> sources, Collection<String> sinks);
+	
 	/**
 	 * Computes the information flow on a list of entry point methods. This list
 	 * is used to construct an artificial main method following the Android
@@ -166,86 +155,19 @@ public interface IInfoflow {
 	 */
 	public boolean isResultAvailable();
 	
-	/**
-	 * default: inspectSources is set to true, this means sources are analyzed as well.
-	 * If inspectSources is set to false, then the analysis does not propagate values into 
-	 * the source method.
-	 * @param inspect boolean that determines the inspectSource option
-	 */
-	public void setInspectSources(boolean inspect);
-
-	/**
-	 * default: inspectSinks is set to true, this means sinks are analyzed as well.
-	 * If inspectSinks is set to false, then the analysis does not propagate values into 
-	 * the sink method.
-	 * @param inspect boolean that determines the inspectSink option
-	 */
-	public void setInspectSinks(boolean inspect);
-	
-	/**
-	 * Sets whether the solver shall consider implicit flows.
-	 * @param enableImplicitFlows True if implicit flows shall be considered,
-	 * otherwise false.
-	 */
-	public void setEnableImplicitFlows(boolean enableImplicitFlows);
-
-	/**
-	 * Sets whether the solver shall consider assignments to static fields
-	 * @param enableStaticFields True if assignments to static fields shall be
-	 * considered, otherwise false
-	 */
-	public void setEnableStaticFieldTracking(boolean enableStaticFields);
-	
-	/**
-	 * Sets whether the solver shall compute the paths between the sources and
-	 * sinks instead of just reporting if there is a path or not.
-	 * @param computeResultPaths True if paths shall be computed, otherwise false
-	 */
-	public void setComputeResultPaths(boolean computeResultPaths);
-
-	/**
-	 * Sets whether a flow sensitive aliasing algorithm shall be used
-	 * @param flowSensitiveAliasing True if a flow sensitive aliasing algorithm
-	 * shall be used, otherwise false
-	 */
-	public void setFlowSensitiveAliasing(boolean flowSensitiveAliasing);
-	
-	/**
-	 * Sets whether the solver shall track taints of thrown exception objects
-	 * @param enableExceptions True if taints associated with exceptions shall
-	 * be tracked over try/catch construct, otherwise false
-	 */
-	public void setEnableExceptionTracking(boolean enableExceptions);
-
-	/**
-	 * Sets the callgraph algorithm to be used by the data flow tracker
-	 * @param algorithm The callgraph algorithm to be used by the data flow tracker
-	 */
-	public void setCallgraphAlgorithm(CallgraphAlgorithm algorithm);
-	
-	/**
-	 * Sets the aliasing algorithm to be used by the data flow tracker
-	 * @param algorithm The aliasing algorithm to be used by the data flow tracker
-	 */
-	public void setAliasingAlgorithm(AliasingAlgorithm algorithm);
-	
-	/**
-	 * Sets the maximum number of threads to be used by the solver. A value of -1
-	 * indicates an unlimited number of threads, i.e., there will be as many threads
-	 * as there are CPU cores on the machine.
-	 * @param threadNum The maximum number of threads to be used by the solver,
-	 * or -1 for an unlimited number of threads.
-	 */
-	public void setMaxThreadNum(int threadNum);
-	
 	public void setIPCManager(IIPCManager ipcManager);
 	
 	/**
-	 * Sets whether flows starting or ending in system packages such as Android's
-	 * support library shall be ignored.
-	 * @param ignoreFlowsInSystemPackages True if flows starting or ending in
-	 * system packages shall be ignored, otherwise false.
+	 * Sets the Soot configuration callback to be used for this analysis
+	 * @param config The configuration callback to be used for the analysis
 	 */
-	public void setIgnoreFlowsInSystemPackages(boolean ignoreFlowsInSystemPackages);
+	public void setSootConfig(IInfoflowConfig config);
+	
+	/**
+	 * Sets the path builder factory to be used in subsequent data flow analyses
+	 * @param factory The path bilder factory to use for constructing path
+	 * reconstruction algorithms
+	 */
+	public void setPathBuilderFactory(IPathBuilderFactory factory);
 	
 }

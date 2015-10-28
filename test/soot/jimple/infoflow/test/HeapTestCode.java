@@ -11,6 +11,7 @@
 package soot.jimple.infoflow.test;
 
 import java.util.ArrayList;
+import java.util.Random;
 
 import soot.jimple.infoflow.test.android.AccountManager;
 import soot.jimple.infoflow.test.android.ConnectionManager;
@@ -102,10 +103,19 @@ public class HeapTestCode {
 		cm.publish(str);
 	}
 	
+	public void methodTest0b(){
+		String taint = TelephonyManager.getDeviceId();
+		A a = new A();
+		String str = a.b;
+		a.b = taint;
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(str);
+	}
 	
 	class A{
 		public String b = "Y";
 		public String c = "X";
+		public int i = 0;
 	}
 	
 	class X{
@@ -313,6 +323,19 @@ public class HeapTestCode {
 		String[] c = b;
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(c[0]);		
+	}
+	
+	public void arrayAliasTest2() {
+		String tainted = TelephonyManager.getDeviceId();
+		String[] arr = new String[] { "foo", "bar" };
+		String[] arr2 = arr;
+		int size = arr.length;
+		arr[1] = tainted;
+		String x = arr2[1];
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(x);
+		System.out.println(size);
 	}
 
 	public void functionAliasTest() {
@@ -849,9 +872,14 @@ public class HeapTestCode {
 			public String get() {
 				return obj.data;
 			}
+			
+			public String getParent() {
+				return parentData;
+			}
 		}
 		
 		public Inner2b obj;
+		public String parentData;
 		
 		public String get() {
 			return obj.data;
@@ -868,7 +896,7 @@ public class HeapTestCode {
 		a.obj.set();
 		String untainted = b.get();
 		ConnectionManager cm = new ConnectionManager();
-		cm.publish(untainted);		
+		cm.publish(untainted);
 	}
 
 	public void innerClassTest3() {
@@ -895,6 +923,53 @@ public class HeapTestCode {
 		String untainted = b.obj.get();
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(untainted);		
+	}
+	
+	private class Inner3 {
+		
+		private class Inner2b {
+			
+			private Inner2 foo;
+			
+		}
+
+		private String data;
+		
+		private class Inner2 {
+			
+			public void set() {
+				data = TelephonyManager.getDeviceId();
+			}
+		}
+		
+		private Inner2b obj2;
+		
+		public String get() {
+			return data;
+		}
+	}
+	
+	public void innerClassTest5() {
+		Inner3 a = new Inner3();
+		Inner3 b = new Inner3();
+		
+		a.obj2 = b.new Inner2b();
+		a.obj2.foo = b.new Inner2();
+		
+		a.obj2.foo.set();
+		String untainted = a.get();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(untainted);
+	}
+	
+	public void innerClassTest6() {
+		Inner1b a = new Inner1b();
+		a.obj = a.new Inner2b();
+		a.parentData = TelephonyManager.getDeviceId();
+		
+		Inner1b.Inner2b inner = a.obj;
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(inner.getParent());
 	}
 	
 	private class SimpleTree {
@@ -1050,6 +1125,154 @@ public class HeapTestCode {
 		q.b = TelephonyManager.getDeviceId();
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(a.attr.b);
+	}
+	
+	private class Data {
+		public Data next;
+	}
+	
+	private Data getSecretData() {
+		return new Data();
+	}
+	
+	private void leakData(Data e) {
+		System.out.println(e);
+	}
+	
+	public void aliasStrongUpdateTest() {
+		Data d = getSecretData();
+		d = d.next;
+		Data e = d;
+		
+		Data x = new Data();
+		x.next = e;
+		Data y = x;
+		e = y.next;
+		e = e.next;
+		leakData(e);
+	}
+	
+	public void aliasStrongUpdateTest2() {
+		Data d = getSecretData();
+		d = d.next;
+		Data e = d;
+		
+		Data x = new Data();
+		Data y = x;
+		x.next = e;
+		e = y.next;
+		e = e.next;
+		leakData(e);
+	}
+	
+	private Data taintedBySourceSinkManager = null;
+	
+	public void aliasStrongUpdateTest3() {
+		Data d = taintedBySourceSinkManager;
+		d = d.next;
+		Data e = d;
+		
+		Data x = new Data();
+		Data y = x;
+		x.next = e;
+		e = y.next;
+		e = e.next;
+		leakData(y.next);
+	}
+	
+	public void arrayLengthAliasTest1() {
+		String tainted = TelephonyManager.getDeviceId();
+		String[] arr = new String[] { "foo", "xx", "bar" };
+		int size = arr.length;
+		arr[1] = tainted;
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(size);
+	}
+	
+	public void arrayLengthAliasTest2() {
+		String tainted = TelephonyManager.getDeviceId();
+		String[] arr = new String[] { "foo", "xx", "bar" };
+		String[] arr2 = arr;
+		int size = arr.length;
+		arr[1] = tainted;
+		int size2 = arr2.length;
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(size2);
+		System.out.println(size);
+	}
+	
+	public void arrayLengthAliasTest3() {
+		String tainted = TelephonyManager.getDeviceId();
+		String[] arr = new String[tainted.length()];
+		int size = arr.length;
+		arr[1] = tainted;
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(size);
+	}
+	
+	public void arrayLengthAliasTest4() {
+		String tainted = TelephonyManager.getDeviceId();
+		String[] arr = new String[tainted.length()];
+		String[] arr2 = arr;
+		int size = arr.length;
+		arr[1] = tainted;
+		int size2 = arr2.length;
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(size2);
+		System.out.println(size);
+	}
+	
+	public void taintPrimitiveFieldTest1() {
+		A a = new A();
+		A b = a;
+		a.i = TelephonyManager.getIMEI();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(b.i);		
+	}
+	
+	public void taintPrimitiveFieldTest2() {
+		B b = new B();
+		A a = new A();
+		b.attr = a;
+		a.i = TelephonyManager.getIMEI();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(b.attr.i);
+	}
+	
+	public void multiContextTest1() {
+		A a = new A();
+		a.b = TelephonyManager.getDeviceId();
+		a.c = TelephonyManager.getDeviceId();
+		String data = id(a.b);
+		String data2 = id(a.c);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(data);
+		cm.publish(data2);
+	}
+	
+	private String id(String val) {
+		return val;
+	}
+	
+	public void recursiveFollowReturnsPastSeedsTest1() {
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(doTaintRecursively(new A()));
+	}
+	
+	private String doTaintRecursively(A a) {
+		if (new Random().nextBoolean()) {
+			a.b = TelephonyManager.getDeviceId();
+			return "";
+		}
+		else {
+			A a2 = new A();
+			doTaintRecursively(a2);
+			return a2.b;
+		}
 	}
 	
 }

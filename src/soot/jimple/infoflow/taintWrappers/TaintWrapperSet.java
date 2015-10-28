@@ -12,10 +12,12 @@ package soot.jimple.infoflow.taintWrappers;
 
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import soot.SootMethod;
 import soot.jimple.Stmt;
-import soot.jimple.infoflow.data.AccessPath;
-import soot.jimple.infoflow.solver.IInfoflowCFG;
+import soot.jimple.infoflow.InfoflowManager;
+import soot.jimple.infoflow.data.Abstraction;
 
 /**
  * Set of taint wrappers. It supports taint wrapping for a class if at least one
@@ -24,9 +26,17 @@ import soot.jimple.infoflow.solver.IInfoflowCFG;
  * 
  * @author Steven Arzt
  */
-public class TaintWrapperSet extends AbstractTaintWrapper {
+public class TaintWrapperSet implements ITaintPropagationWrapper {
 
 	private Set<ITaintPropagationWrapper> wrappers = new HashSet<ITaintPropagationWrapper>();
+	private AtomicInteger hits = new AtomicInteger();
+	private AtomicInteger misses = new AtomicInteger();
+	
+	@Override
+	public void initialize(InfoflowManager manager) {
+		for (ITaintPropagationWrapper w : this.wrappers)
+			w.initialize(manager);
+	}
 	
 	/**
 	 * Adds the given wrapper to the chain of wrappers.
@@ -37,20 +47,68 @@ public class TaintWrapperSet extends AbstractTaintWrapper {
 	}
 
 	@Override
-	public Set<AccessPath> getTaintsForMethod(Stmt stmt, AccessPath taintedPath,
-			IInfoflowCFG icfg) {
-		Set<AccessPath> resList = new HashSet<AccessPath>();
-		for (ITaintPropagationWrapper w : this.wrappers)
-			resList.addAll(w.getTaintsForMethod(stmt, taintedPath, icfg));
-		return new HashSet<AccessPath>(resList);
+	public Set<Abstraction> getTaintsForMethod(Stmt stmt, Abstraction d1,
+			Abstraction taintedPath) {
+		Set<Abstraction> resList = new HashSet<Abstraction>();
+		for (ITaintPropagationWrapper w : this.wrappers) {
+			Set<Abstraction> curAbsSet = w.getTaintsForMethod(stmt, d1, taintedPath);
+			if (curAbsSet != null)
+				resList.addAll(curAbsSet);
+		}
+		
+		// Bookkeeping for statistics
+		if (resList.isEmpty())
+			misses.incrementAndGet();
+		else
+			hits.incrementAndGet();
+		
+		return resList;
 	}
 
 	@Override
-	public boolean isExclusiveInternal(Stmt stmt, AccessPath taintedPath,
-			IInfoflowCFG icfg) {
+	public boolean isExclusive(Stmt stmt, Abstraction taintedPath) {
 		for (ITaintPropagationWrapper w : this.wrappers)
-			if (w.isExclusive(stmt, taintedPath, icfg))
+			if (w.isExclusive(stmt, taintedPath))
 				return true;
 		return false;
 	}
+
+	@Override
+	public boolean supportsCallee(SootMethod method) {
+		for (ITaintPropagationWrapper w : this.wrappers)
+			if (w.supportsCallee(method))
+				return true;
+		return false;
+	}
+	
+	@Override
+	public boolean supportsCallee(Stmt callSite) {
+		for (ITaintPropagationWrapper w : this.wrappers)
+			if (w.supportsCallee(callSite))
+				return true;
+		return false;
+	}
+
+	@Override
+	public int getWrapperHits() {
+		return hits.get();
+	}
+
+	@Override
+	public int getWrapperMisses() {
+		return misses.get();
+	}
+
+	@Override
+	public Set<Abstraction> getAliasesForMethod(Stmt stmt, Abstraction d1,
+			Abstraction taintedPath) {
+		Set<Abstraction> resList = new HashSet<Abstraction>();
+		for (ITaintPropagationWrapper w : this.wrappers) {
+			Set<Abstraction> curAbsSet = w.getAliasesForMethod(stmt, d1, taintedPath);
+			if (curAbsSet != null)
+				resList.addAll(curAbsSet);
+		}
+		return resList;
+	}
+	
 }

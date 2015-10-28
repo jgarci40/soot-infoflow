@@ -6,17 +6,17 @@ import heros.solver.Pair;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import soot.jimple.Stmt;
-import soot.jimple.infoflow.InfoflowResults;
 import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AbstractionAtSink;
+import soot.jimple.infoflow.data.SourceContext;
 import soot.jimple.infoflow.data.SourceContextAndPath;
-import soot.jimple.infoflow.solver.IInfoflowCFG;
+import soot.jimple.infoflow.results.InfoflowResults;
+import soot.jimple.infoflow.solver.cfg.IInfoflowCFG;
 
 /**
  * Class for reconstructing abstraction paths from sinks to source. This builder
@@ -27,20 +27,21 @@ import soot.jimple.infoflow.solver.IInfoflowCFG;
  */
 public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder {
 	
-	private AtomicInteger propagationCount = null;
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
     private final InfoflowResults results = new InfoflowResults();
 	private final CountingThreadPoolExecutor executor;
-	
-	private boolean reconstructPaths = false;
-		
+			
 	/**
 	 * Creates a new instance of the {@link ContextSensitivePathBuilder} class
+	 * @param icfg The interprocedural control flow graph
 	 * @param maxThreadNum The maximum number of threads to use
+	 * @param reconstructPaths True if the exact propagation path between source
+	 * and sink shall be reconstructed.
 	 */
-	public ContextSensitivePathBuilder(IInfoflowCFG icfg, int maxThreadNum) {
-		super(icfg);
+	public ContextSensitivePathBuilder(IInfoflowCFG icfg, int maxThreadNum,
+			boolean reconstructPaths) {
+		super(icfg, reconstructPaths);
         int numThreads = Runtime.getRuntime().availableProcessors();
 		this.executor = createExecutor(maxThreadNum == -1 ? numThreads
 				: Math.min(maxThreadNum, numThreads));
@@ -71,41 +72,22 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
 		
 		@Override
 		public void run() {
-			propagationCount.incrementAndGet();
-			
 			final Set<SourceContextAndPath> paths = abstraction.getPaths();
 			final Abstraction pred = abstraction.getPredecessor();
 			
-			if (pred == null) {
-				// If we have no predecessors, this must be a source
-				assert abstraction.getSourceContext() != null;
-				assert abstraction.getNeighbors() == null;
-				
-				// Register the result
+			if (pred != null) {
 				for (SourceContextAndPath scap : paths) {
-					SourceContextAndPath extendedScap =
-							scap.extendPath(abstraction.getSourceContext().getStmt());
-					results.addResult(extendedScap.getValue(),
-							extendedScap.getStmt(),
-							abstraction.getSourceContext().getValue(),
-							abstraction.getSourceContext().getStmt(),
-							abstraction.getSourceContext().getUserData(),
-							extendedScap.getPath());
-				}
-			}
-			else {
-				for (SourceContextAndPath scap : paths) {						
 					// Process the predecessor
 					if (processPredecessor(scap, pred))
 						// Schedule the predecessor
-						executor.execute(new SourceFindingTask(pred));
+						spawnSourceFindingTask(pred);
 					
 					// Process the predecessor's neighbors
 					if (pred.getNeighbors() != null)
 						for (Abstraction neighbor : pred.getNeighbors())
 							if (processPredecessor(scap, neighbor))
 								// Schedule the predecessor
-								executor.execute(new SourceFindingTask(neighbor));
+								spawnSourceFindingTask(neighbor);
 				}
 			}
 		}
@@ -115,14 +97,18 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
 			// immediately leave again for performance reasons.
 			if (pred.getCurrentStmt() != null
 					&& pred.getCurrentStmt() == pred.getCorrespondingCallSite()) {
-				SourceContextAndPath extendedScap = scap.extendPath(reconstructPaths
-						? pred.getCurrentStmt() : null);
+				SourceContextAndPath extendedScap = scap.extendPath(pred, reconstructPaths);
+				if (extendedScap == null)
+					return false;
+				
+				checkForSource(pred, extendedScap);
 				return pred.addPathElement(extendedScap);
 			}
 			
 			// If we enter a method, we put it on the stack
-			SourceContextAndPath extendedScap = scap.extendPath(reconstructPaths
-					? pred.getCurrentStmt() : null, pred.getCorrespondingCallSite());
+			SourceContextAndPath extendedScap = scap.extendPath(pred, reconstructPaths);
+			if (extendedScap == null)
+				return false;
 			
 			// Do we process a method return?
 			if (pred.getCurrentStmt() != null 
@@ -141,21 +127,43 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
 					extendedScap = pathAndItem.getO1();
 				}
 			}
-				
+			
 			// Add the new path
+			checkForSource(pred, extendedScap);
 			return pred.addPathElement(extendedScap);
 		}
+		
 	}
 	
-	@Override
-	public void computeTaintSources(final Set<AbstractionAtSink> res) {
-		this.reconstructPaths = false;
-		runSourceFindingTasks(res);
+	/**
+	 * Checks whether the given abstraction is a source. If so, a result entry
+	 * is created.
+	 * @param abs The abstraction to check
+	 * @param scap The path leading up to the current abstraction
+	 * @return True if the current abstraction is a source, otherwise false
+	 */
+	protected boolean checkForSource(Abstraction abs, SourceContextAndPath scap) {
+		if (abs.getPredecessor() != null)
+			return false;
+		
+		// If we have no predecessors, this must be a source
+		assert abs.getSourceContext() != null;
+		assert abs.getNeighbors() == null;
+		
+		// Register the source that we have found
+		SourceContext sourceContext = abs.getSourceContext();
+		results.addResult(scap.getAccessPath(),
+				scap.getStmt(),
+				sourceContext.getAccessPath(),
+				sourceContext.getStmt(),
+				sourceContext.getUserData(),
+				scap.getAbstractionPath());
+		return true;
 	}
 	
 	@Override
 	public void computeTaintPaths(final Set<AbstractionAtSink> res) {
-		this.reconstructPaths = true;
+		logger.info("Context-sensitive path reconstructor started");
 		runSourceFindingTasks(res);
 	}
 	
@@ -164,8 +172,7 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
 			return;
 		
 		long beforePathTracking = System.nanoTime();
-		propagationCount = new AtomicInteger();
-    	logger.info("Obtainted {} connections between sources and sinks", res.size());
+    	logger.info("Obtainted {} connections between {} sources and sinks", res.size());
     	
     	// Start the propagation tasks
     	int curResIdx = 0;
@@ -177,7 +184,7 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
    			if (abs.getAbstraction().getNeighbors() != null)
    				for (Abstraction neighbor : abs.getAbstraction().getNeighbors()) {
    					AbstractionAtSink neighborAtSink = new AbstractionAtSink(neighbor,
-   							abs.getSinkValue(), abs.getSinkStmt());
+   							abs.getSinkStmt());
    		   			buildPathForAbstraction(neighborAtSink);
    				}
     	}
@@ -189,21 +196,30 @@ public class ContextSensitivePathBuilder extends AbstractAbstractionPathBuilder 
 			ex.printStackTrace();
 		}
     	
-    	logger.info("Path processing took {} seconds in total for {} edges",
-    			(System.nanoTime() - beforePathTracking) / 1E9, propagationCount.get());
+    	logger.info("Path processing took {} seconds in total",
+    			(System.nanoTime() - beforePathTracking) / 1E9);
 	}
 	
 	/**
 	 * Builds the path for the given abstraction that reached a sink
 	 * @param abs The abstraction that reached a sink
 	 */
-	private void buildPathForAbstraction(final AbstractionAtSink abs) {
+	protected void buildPathForAbstraction(final AbstractionAtSink abs) {
 		SourceContextAndPath scap = new SourceContextAndPath(
-				abs.getSinkValue(), abs.getSinkStmt());
-		scap = scap.extendPath(abs.getSinkStmt());
-		abs.getAbstraction().addPathElement(scap);
+				abs.getAbstraction().getAccessPath(), abs.getSinkStmt());
+		scap = scap.extendPath(abs.getAbstraction());
 		
-		executor.execute(new SourceFindingTask(abs.getAbstraction()));
+		if (abs.getAbstraction().addPathElement(scap))
+			if (!checkForSource(abs.getAbstraction(), scap))
+				spawnSourceFindingTask(abs.getAbstraction());
+	}
+	
+	/**
+	 * Schedules a new propagation task for execution
+	 * @param abs The abstraction for which to schedule a propagation task
+	 */
+	protected void spawnSourceFindingTask(Abstraction abs) {
+		executor.execute(new SourceFindingTask(abs));
 	}
 	
 	@Override

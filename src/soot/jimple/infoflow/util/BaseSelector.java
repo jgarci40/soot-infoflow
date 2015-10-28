@@ -13,9 +13,10 @@ package soot.jimple.infoflow.util;
 import soot.Value;
 import soot.jimple.ArrayRef;
 import soot.jimple.BinopExpr;
+import soot.jimple.CastExpr;
 import soot.jimple.InstanceOfExpr;
+import soot.jimple.NewArrayExpr;
 import soot.jimple.UnopExpr;
-import soot.jimple.internal.JCastExpr;
 
 /**
  * BaseSelector removes unnecessary information from a value such as casts
@@ -28,24 +29,27 @@ public class BaseSelector {
 	 * @param val the value which should be pruned
 	 * @param keepArrayRef if false then array refs are pruned to the base array object
 	 * @return the value (possibly pruned to base object)
-	 */ //we want to keep ArrayRef for objects on the right side of the assignment
+	 */
 	public static Value selectBase(Value val, boolean keepArrayRef){
 		//we taint base of array instead of array elements
 		if (val instanceof ArrayRef && !keepArrayRef) {
-			return selectBase(((ArrayRef) val).getBase(), keepArrayRef);
+			return ((ArrayRef) val).getBase();
 		}
-		
-		if (val instanceof JCastExpr) {
-			return selectBase(((JCastExpr) val).getOpBox().getValue(), keepArrayRef);
+		else if (val instanceof CastExpr) {
+			return ((CastExpr) val).getOp();
 		}
-		
-		// Check for unary operators like "not" or "length"
-		if (val instanceof UnopExpr)
-			return selectBase(((UnopExpr) val).getOp(), keepArrayRef);
+		else if (val instanceof NewArrayExpr) {
+			return ((NewArrayExpr) val).getSize();
+		}
+		else if (val instanceof InstanceOfExpr) {
+			return ((InstanceOfExpr) val).getOp();
+		}
+		else if (val instanceof UnopExpr)
+			return ((UnopExpr) val).getOp();
 		
 		return val;
 	}
-
+	
 	/**
 	 * the operations that are not relevant for analysis like "not" or casts
 	 * are removed - array refs are only removed if explicitly stated
@@ -60,10 +64,6 @@ public class BaseSelector {
 			BinopExpr expr = (BinopExpr) val;
 			set[0] = expr.getOp1();
 			set[1] = expr.getOp2();
-			return set;
-		}
-		else if (val instanceof InstanceOfExpr) {
-			Value[] set = new Value[] { ((InstanceOfExpr) val).getOp() };
 			return set;
 		}
 		else

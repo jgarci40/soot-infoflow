@@ -11,7 +11,6 @@
 package soot.jimple.infoflow.entryPointCreators;
 
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -66,13 +65,15 @@ public abstract class BaseEntryPointCreator implements IEntryPointCreator {
 
 	protected Map<String, Local> localVarsForClasses = new HashMap<String, Local>();
 	private final Set<SootClass> failedClasses = new HashSet<SootClass>();
+	
 	private boolean substituteCallParams = false;
 	private List<String> substituteClasses;
+	private boolean allowSelfReferences = false;
 
 	private final Set<SootMethod> failedMethods = new HashSet<>();
 	
-	protected final String DUMMY_CLASS_NAME = "dummyMainClass";
-	protected final String DUMMY_METHOD_NAME = "dummyMainMethod";
+	protected String dummyClassName = "dummyMainClass";
+	protected String dummyMethodName = "dummyMainMethod";
 	
 	/**
 	 * Returns a copy of all classes that could not be instantiated properly
@@ -139,22 +140,31 @@ public abstract class BaseEntryPointCreator implements IEntryPointCreator {
 		// If we already have a main class, we need to make sure to use a fresh
 		// method name
 		final SootClass mainClass;
-		String methodName = DUMMY_METHOD_NAME;
-		if (Scene.v().containsClass(DUMMY_CLASS_NAME)) {
+		String methodName = dummyMethodName;
+		if (Scene.v().containsClass(dummyClassName)) {
 			int methodIndex = 0;
-			mainClass = Scene.v().getSootClass(DUMMY_CLASS_NAME);
+			mainClass = Scene.v().getSootClass(dummyClassName);
 			while (mainClass.declaresMethodByName(methodName))
-				methodName = DUMMY_METHOD_NAME + "_" + methodIndex++;
+				methodName = dummyMethodName + "_" + methodIndex++;
 		}
 		else {
-			mainClass = new SootClass(DUMMY_CLASS_NAME);
+			mainClass = new SootClass(dummyClassName);
 			Scene.v().addClass(mainClass);
 		}
 		
-		SootMethod mainMethod = new SootMethod(methodName, new ArrayList<Type>(), VoidType.v());
+		Type stringArrayType = ArrayType.v(RefType.v("java.lang.String"), 1);
+		SootMethod mainMethod = new SootMethod(methodName,
+				Collections.singletonList(stringArrayType), VoidType.v());
 		body.setMethod(mainMethod);
 		mainMethod.setActiveBody(body);
 		mainClass.addMethod(mainMethod);
+		
+		// Add a parameter reference to the body
+		LocalGenerator lg = new LocalGenerator(body);
+		Local paramLocal = lg.generateLocal(stringArrayType);
+		body.getUnits().addFirst(Jimple.v().newIdentityStmt(paramLocal,
+				Jimple.v().newParameterRef(stringArrayType, 0)));
+		
 		// First add class to scene, then make it an application class
 		// as addClass contains a call to "setLibraryClass" 
 		mainClass.setApplicationClass();
@@ -162,53 +172,70 @@ public abstract class BaseEntryPointCreator implements IEntryPointCreator {
 		return mainMethod;
 	}
 	
-	protected Stmt buildMethodCall(SootMethod currentMethod, Body body, Local classLocal, LocalGenerator gen){
-		return buildMethodCall(currentMethod, body, classLocal, gen, Collections.<SootClass>emptySet());
+	/**
+	 * Builds a new invocation statement that invokes the given method
+	 * @param methodToCall The method to call
+	 * @param body The body in which to create the invocation statement
+	 * @param classLocal The local containing an instance of the class on which
+	 * to invoke the method
+	 * @param gen The local generator to be used for generating locals that hold
+	 * any additional values required for the call parameters
+	 * @return The newly created invocation statement
+	 */
+	protected Stmt buildMethodCall(SootMethod methodToCall, Body body,
+			Local classLocal, LocalGenerator gen) {
+		return buildMethodCall(methodToCall, body, classLocal, gen,
+				Collections.<SootClass>emptySet());
 	}
 
-	protected Stmt buildMethodCall(SootMethod currentMethod, Body body, Local classLocal, LocalGenerator gen,
+	protected Stmt buildMethodCall(SootMethod methodToCall, Body body,
+			Local classLocal, LocalGenerator gen,
 			Set<SootClass> parentClasses){
-		assert currentMethod != null : "Current method was null";
+		assert methodToCall != null : "Current method was null";
 		assert body != null : "Body was null";
 		assert gen != null : "Local generator was null";
 		
-		if (classLocal == null && !currentMethod.isStatic()) {
+		if (classLocal == null && !methodToCall.isStatic()) {
 			logger.warn("Cannot call method {}, because there is no local for base object: {}", 
-					currentMethod, currentMethod.getDeclaringClass());
-			failedMethods.add(currentMethod);
+					methodToCall, methodToCall.getDeclaringClass());
+			failedMethods.add(methodToCall);
 			return null;
 		}
-		
+				
 		final InvokeExpr invokeExpr;
 		List<Value> args = new LinkedList<Value>();
-		if(currentMethod.getParameterCount()>0){
-			for (Type tp : currentMethod.getParameterTypes())
-				args.add(getValueForType(body, gen, tp, new HashSet<SootClass>(), parentClasses));
+		if(methodToCall.getParameterCount() > 0){
+			for (Type tp : methodToCall.getParameterTypes()) {
+				Set<SootClass> constructionStack = new HashSet<SootClass>();
+				if (!allowSelfReferences)
+					constructionStack.add(methodToCall.getDeclaringClass());
+				args.add(getValueForType(body, gen, tp, constructionStack, parentClasses));
+			}
 			
-			if(currentMethod.isStatic())
-				invokeExpr = Jimple.v().newStaticInvokeExpr(currentMethod.makeRef(), args);
+			if(methodToCall.isStatic())
+				invokeExpr = Jimple.v().newStaticInvokeExpr(methodToCall.makeRef(), args);
 			else {
 				assert classLocal != null : "Class local method was null for non-static method call";
-				if (currentMethod.isConstructor())
-					invokeExpr = Jimple.v().newSpecialInvokeExpr(classLocal, currentMethod.makeRef(),args);
+				if (methodToCall.isConstructor())
+					invokeExpr = Jimple.v().newSpecialInvokeExpr(classLocal, methodToCall.makeRef(),args);
 				else
-					invokeExpr = Jimple.v().newVirtualInvokeExpr(classLocal, currentMethod.makeRef(),args);
+					invokeExpr = Jimple.v().newVirtualInvokeExpr(classLocal, methodToCall.makeRef(),args);
 			}
 		}else{
-			if(currentMethod.isStatic()){
-				invokeExpr = Jimple.v().newStaticInvokeExpr(currentMethod.makeRef());
+			if(methodToCall.isStatic()){
+				invokeExpr = Jimple.v().newStaticInvokeExpr(methodToCall.makeRef());
 			}else{
 				assert classLocal != null : "Class local method was null for non-static method call";
-				if (currentMethod.isConstructor())
-					invokeExpr = Jimple.v().newSpecialInvokeExpr(classLocal, currentMethod.makeRef());
+				if (methodToCall.isConstructor())
+					invokeExpr = Jimple.v().newSpecialInvokeExpr(classLocal, methodToCall.makeRef());
 				else
-					invokeExpr = Jimple.v().newVirtualInvokeExpr(classLocal, currentMethod.makeRef());
+					invokeExpr = Jimple.v().newVirtualInvokeExpr(classLocal, methodToCall.makeRef());
 			}
 		}
 		 
 		Stmt stmt;
-		if (!(currentMethod.getReturnType() instanceof VoidType)) {
-			Local returnLocal = gen.generateLocal(currentMethod.getReturnType());
+		if (!(methodToCall.getReturnType() instanceof VoidType)) {
+			Local returnLocal = gen.generateLocal(methodToCall.getReturnType());
 			stmt = Jimple.v().newAssignStmt(returnLocal, invokeExpr);
 			
 		} else {
@@ -610,6 +637,35 @@ public abstract class BaseEntryPointCreator implements IEntryPointCreator {
 					unitIt.remove();
 			}
 		}
+	}
+	
+	/**
+	 * Sets the name that shall be used for the new class containing the dummy
+	 * main method
+	 * @param dummyMethodName The name for the new class containing the dummy
+	 * main method
+	 */
+	public void setDummyClassName(String dummyClassName) {
+		this.dummyClassName = dummyClassName;
+	}
+	
+	/**
+	 * Sets the name that shall be used for the new dummy main method
+	 * @param dummyMethodName The name for the new dummy main method
+	 */
+	public void setDummyMethodName(String dummyMethodName) {
+		this.dummyMethodName = dummyMethodName;
+	}
+	
+	/**
+	 * Sets whether a call to a method A.foo() may receive an instance of A as
+	 * a parameter. If this is not allowed, other type-compatible class instances
+	 * are taken. If they don't exist, null is used.
+	 * @param value True if method calls may receive instances of their
+	 * containing class as parameter values, otherwise false 
+	 */
+	public void setAllowSelfReferences(boolean value) {
+		this.allowSelfReferences = value;
 	}
 
 }

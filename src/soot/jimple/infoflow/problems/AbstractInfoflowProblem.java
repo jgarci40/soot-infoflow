@@ -19,30 +19,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import soot.ArrayType;
-import soot.IntType;
-import soot.Local;
-import soot.LongType;
-import soot.PrimType;
-import soot.RefType;
-import soot.Scene;
-import soot.SootClass;
 import soot.SootMethod;
 import soot.Type;
 import soot.Unit;
-import soot.Value;
-import soot.jimple.InstanceFieldRef;
-import soot.jimple.StaticFieldRef;
+import soot.jimple.CaughtExceptionRef;
+import soot.jimple.DefinitionStmt;
+import soot.jimple.InvokeExpr;
+import soot.jimple.infoflow.InfoflowManager;
+import soot.jimple.infoflow.collect.ConcurrentHashSet;
+import soot.jimple.infoflow.collect.MyConcurrentHashMap;
 import soot.jimple.infoflow.data.Abstraction;
-import soot.jimple.infoflow.data.AccessPath;
 import soot.jimple.infoflow.handlers.TaintPropagationHandler;
-import soot.jimple.infoflow.nativ.DefaultNativeCallHandler;
-import soot.jimple.infoflow.nativ.NativeCallHandler;
-import soot.jimple.infoflow.solver.IInfoflowCFG;
+import soot.jimple.infoflow.handlers.TaintPropagationHandler.FlowFunctionType;
+import soot.jimple.infoflow.nativ.INativeCallHandler;
 import soot.jimple.infoflow.solver.IInfoflowSolver;
-import soot.jimple.infoflow.source.ISourceSinkManager;
+import soot.jimple.infoflow.solver.cfg.IInfoflowCFG;
 import soot.jimple.infoflow.taintWrappers.ITaintPropagationWrapper;
-import soot.jimple.infoflow.util.ConcurrentHashSet;
-import soot.jimple.infoflow.util.MyConcurrentHashMap;
 import soot.jimple.toolkits.ide.DefaultJimpleIFDSTabulationProblem;
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
 
@@ -54,77 +46,29 @@ import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
  */
 public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulationProblem<Abstraction,
 			BiDiInterproceduralCFG<Unit, SootMethod>> {
-
+	
+	protected final InfoflowManager manager;
+	
 	protected final Map<Unit, Set<Abstraction>> initialSeeds = new HashMap<Unit, Set<Abstraction>>();
-	protected ITaintPropagationWrapper taintWrapper;
+	protected ITaintPropagationWrapper taintWrapper;	
+	protected INativeCallHandler ncHandler;
 	
-	protected final NativeCallHandler ncHandler = new DefaultNativeCallHandler();
-	protected final ISourceSinkManager sourceSinkManager;
-
     protected final Logger logger = LoggerFactory.getLogger(getClass());
-
-    protected boolean enableImplicitFlows = false;
-	protected boolean enableStaticFields = true;
-	protected boolean enableExceptions = true;
-	protected boolean flowSensitiveAliasing = true;
-	protected boolean enableTypeChecking = true;
-	protected boolean ignoreFlowsInSystemPackages = true;
-	
-	protected boolean inspectSources = false;
-	protected boolean inspectSinks = false;
 
 	private Abstraction zeroValue = null;
 	
 	protected IInfoflowSolver solver = null;
 	
-	protected boolean stopAfterFirstFlow = false;
-	
-	protected Set<TaintPropagationHandler> taintPropagationHandlers = null;
+	protected TaintPropagationHandler taintPropagationHandler = null;
 
 	private MyConcurrentHashMap<Unit, Set<Unit>> activationUnitsToCallSites =
 			new MyConcurrentHashMap<Unit, Set<Unit>>();
 	
-	public AbstractInfoflowProblem(BiDiInterproceduralCFG<Unit, SootMethod> icfg,
-			ISourceSinkManager sourceSinkManager) {
-		super(icfg);
-		this.sourceSinkManager = sourceSinkManager;
+	public AbstractInfoflowProblem(InfoflowManager manager) {
+		super(manager.getICFG());
+		this.manager = manager;
 	}
 	
-	protected boolean canCastType(Type destType, Type sourceType) {
-		if (!enableTypeChecking)
-			return true;
-		
-		// If we don't have a source type, we generally allow the cast
-		if (sourceType == null)
-			return true;
-		
-		if (Scene.v().getFastHierarchy().canStoreType(destType, sourceType) // cast-up, i.e. Object to String
-				|| Scene.v().getFastHierarchy().canStoreType(sourceType, destType)) // cast-down, i.e. String to Object
-			return true;
-		
-		if (destType instanceof PrimType && sourceType instanceof PrimType)
-			if (sourceType instanceof LongType && destType instanceof IntType
-					|| destType instanceof LongType && sourceType instanceof IntType)
-				return true;
-			
-		return false;
-	}
-		
-	protected boolean hasCompatibleTypesForCall(AccessPath apBase, SootClass dest) {
-		if (!enableTypeChecking)
-			return true;
-
-		// Cannot invoke a method on a primitive type
-		if (apBase.getBaseType() instanceof PrimType)
-			return false;
-		// Cannot invoke a method on an array
-		if (apBase.getBaseType() instanceof ArrayType)
-			return dest.getName().equals("java.lang.Object");
-		
-		return Scene.v().getOrMakeFastHierarchy().canStoreType(apBase.getBaseType(), dest.getType())
-				|| Scene.v().getOrMakeFastHierarchy().canStoreType(dest.getType(), apBase.getBaseType());
-	}
-
 	public void setSolver(IInfoflowSolver solver) {
 		this.solver = solver;
 	}
@@ -142,81 +86,25 @@ public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulatio
 		return true;
 	}
 	
+	/**
+	 * Sets the taint wrapper that shall be used for applying external library
+	 * models
+	 * @param wrapper The taint wrapper that shall be used for applying external
+	 * library models
+	 */
 	public void setTaintWrapper(ITaintPropagationWrapper wrapper){
-		taintWrapper = wrapper;
-	}
-		
-	/**
-	 * Sets whether the information flow analysis shall stop after the first
-	 * flow has been found
-	 * @param stopAfterFirstFlow True if the analysis shall stop after the
-	 * first flow has been found, otherwise false.
-	 */
-	public void setStopAfterFirstFlow(boolean stopAfterFirstFlow) {
-		this.stopAfterFirstFlow = stopAfterFirstFlow;
-	}
-		
-	/**
-	 * Sets whether the solver shall consider implicit flows.
-	 * @param enableImplicitFlows True if implicit flows shall be considered,
-	 * otherwise false.
-	 */
-	public void setEnableImplicitFlows(boolean enableImplicitFlows) {
-		this.enableImplicitFlows = enableImplicitFlows;
-	}
-
-	/**
-	 * Sets whether the solver shall consider assignments to static fields.
-	 * @param enableStaticFields True if assignments to static fields shall be
-	 * tracked, otherwise false
-	 */
-	public void setEnableStaticFieldTracking(boolean enableStaticFields) {
-		this.enableStaticFields = enableStaticFields;
-	}
-
-	/**
-	 * Sets whether the solver shall track taints over exceptions, i.e. throw
-	 * new RuntimeException(secretData).
-	 * @param enableExceptions True if taints in thrown exception objects shall
-	 * be tracked.
-	 */
-	public void setEnableExceptionTracking(boolean enableExceptions) {
-		this.enableExceptions = enableExceptions;
-	}
-
-	/**
-	 * Sets whether the solver shall use flow sensitive aliasing. This makes
-	 * the analysis more precise, but also requires more time.
-	 * @param flowSensitiveAliasing True if flow sensitive aliasing shall be
-	 * used, otherwise false
-	 */
-	public void setFlowSensitiveAliasing(boolean flowSensitiveAliasing) {
-		this.flowSensitiveAliasing = flowSensitiveAliasing;
-		
-		// We need to reset the zero value since it depends on the flow
-		// sensitivity setting
-		this.zeroValue = null;
+		this.taintWrapper = wrapper;
 	}
 	
 	/**
-	 * Sets whether type checking shall be done on casts and method calls
-	 * @param enableTypeChecking True if type checking shall be performed,
-	 * otherwise false
+	 * Sets the handler class to be used for modeling the effects of native
+	 * methods on the taint state
+	 * @param handler The native call handler to use
 	 */
-	public void setEnableTypeChecking(boolean enableTypeChecking) {
-		this.enableTypeChecking = enableTypeChecking;
+	public void setNativeCallHandler(INativeCallHandler handler) {
+		this.ncHandler = handler;
 	}
 	
-	/**
-	 * Sets whether flows starting or ending in system packages such as Android's
-	 * support library shall be ignored.
-	 * @param ignoreFlowsInSystemPackages True if flows starting or ending in
-	 * system packages shall be ignored, otherwise false.
-	 */
-	public void setIgnoreFlowsInSystemPackages(boolean ignoreFlowsInSystemPackages) {
-		this.ignoreFlowsInSystemPackages = ignoreFlowsInSystemPackages;
-	}
-
 	/**
 	 * Gets whether the given method is an entry point, i.e. one of the initial
 	 * seeds belongs to the given method
@@ -244,76 +132,8 @@ public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulatio
 		return false;
 	}
 	
-	/**
-	 * default: inspectSources is set to true, this means sources are analyzed as well.
-	 * If inspectSources is set to false, then the analysis does not propagate values into 
-	 * the source method. 
-	 * @param inspect boolean that determines the inspectSource option
-	 */
-	public void setInspectSources(boolean inspect){
-		inspectSources = inspect;
-	}
-
-	/**
-	 * default: inspectSinks is set to true, this means sinks are analyzed as well.
-	 * If inspectSinks is set to false, then the analysis does not propagate values into 
-	 * the sink method. 
-	 * @param inspect boolean that determines the inspectSink option
-	 */
-	public void setInspectSinks(boolean inspect){
-		inspectSinks = inspect;
-	}
-		
-	/**
-	 * Checks whether the given base value matches the base of the given
-	 * taint abstraction
-	 * @param baseValue The value to check
-	 * @param source The taint abstraction to check
-	 * @return True if the given value has the same base value as the given
-	 * taint abstraction, otherwise false
-	 */
-	protected boolean baseMatches(final Value baseValue, Abstraction source) {
-		if (baseValue instanceof Local) {
-			if (baseValue.equals(source.getAccessPath().getPlainValue()))
-				return true;
-		}
-		else if (baseValue instanceof InstanceFieldRef) {
-			InstanceFieldRef ifr = (InstanceFieldRef) baseValue;
-			if (ifr.getBase().equals(source.getAccessPath().getPlainValue())
-					&& source.getAccessPath().firstFieldMatches(ifr.getField()))
-				return true;
-		}
-		else if (baseValue instanceof StaticFieldRef) {
-			StaticFieldRef sfr = (StaticFieldRef) baseValue;
-			if (source.getAccessPath().firstFieldMatches(sfr.getField()))
-				return true;
-		}
-		return false;
-	}
-	
-	/**
-	 * Checks whether the given base value matches the base of the given
-	 * taint abstraction and ends there. So a will match a, but not a.x.
-	 * Not that this function will still match a to a.*.
-	 * @param baseValue The value to check
-	 * @param source The taint abstraction to check
-	 * @return True if the given value has the same base value as the given
-	 * taint abstraction and no further elements, otherwise false
-	 */
-	protected boolean baseMatchesStrict(final Value baseValue, Abstraction source) {
-		if (!baseMatches(baseValue, source))
-			return false;
-		
-		if (baseValue instanceof Local)
-			return source.getAccessPath().isLocal();
-		else if (baseValue instanceof InstanceFieldRef || baseValue instanceof StaticFieldRef)
-			return source.getAccessPath().getFieldCount() == 1;
-		
-		throw new RuntimeException("Unexpected left side");
-	}
-	
 	protected boolean isCallSiteActivatingTaint(Unit callSite, Unit activationUnit) {
-		if (!flowSensitiveAliasing)
+		if (!manager.getConfig().getFlowSensitiveAliasing())
 			return false;
 
 		if (activationUnit == null)
@@ -323,7 +143,7 @@ public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulatio
 	}
 	
 	protected boolean registerActivationCallSite(Unit callSite, SootMethod callee, Abstraction activationAbs) {
-		if (!flowSensitiveAliasing)
+		if (!manager.getConfig().getFlowSensitiveAliasing())
 			return false;
 		Unit activationUnit = activationAbs.getActivationUnit();
 		if (activationUnit == null)
@@ -390,13 +210,11 @@ public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulatio
 	}
 	
 	/**
-	 * Adds a handler which is invoked whenever a taint is propagated
+	 * Sets a handler which is invoked whenever a taint is propagated
 	 * @param handler The handler to be invoked when propagating taints
 	 */
-	public void addTaintPropagationHandler(TaintPropagationHandler handler) {
-		if (this.taintPropagationHandlers == null)
-			this.taintPropagationHandlers = new HashSet<>();
-		this.taintPropagationHandlers.add(handler);
+	public void setTaintPropagationHandler(TaintPropagationHandler handler) {
+		this.taintPropagationHandler = handler;
 	}
 	
 	/**
@@ -413,47 +231,95 @@ public abstract class AbstractInfoflowProblem extends DefaultJimpleIFDSTabulatio
 		else
 			return ArrayType.v(type, 1);
 	}
-	
-	/**
-	 * Checks whether the type of the given taint can be cast to the given
-	 * target type
-	 * @param accessPath The access path of the taint to be cast
-	 * @param type The target type to which to cast the taint
-	 * @return True if the cast is possible, otherwise false
-	 */
-	protected boolean checkCast(AccessPath accessPath, Type type) {
-		if (accessPath.isStaticFieldRef())
-			return canCastType(type, accessPath.getFirstFieldType());
-		else
-			return canCastType(type, accessPath.getBaseType());
-	}
-	
-	/**
-	 * Checks whether the given type is java.lang.Object, java.io.Serializable,
-	 * or java.lang.Cloneable.
-	 * @param tp The type to check
-	 * @return True if the given type is one of the three "object-like" types,
-	 * otherwise false
-	 */
-	protected boolean isObjectLikeType(Type tp) {
-		if (!(tp instanceof RefType))
-			return false;
 		
-		RefType rt = (RefType) tp;
-		return rt.getSootClass().getName().equals("java.lang.Object")
-				|| rt.getSootClass().getName().equals("java.io.Serializable")
-				|| rt.getSootClass().getName().equals("java.lang.Cloneable");
-	}
-	
 	@Override
 	public Abstraction createZeroValue() {
 		if (zeroValue == null)
-			zeroValue = Abstraction.getZeroAbstraction(flowSensitiveAliasing);
+			zeroValue = Abstraction.getZeroAbstraction(
+					manager.getConfig().getFlowSensitiveAliasing());
 		return zeroValue;
 	}
 	
 	protected Abstraction getZeroValue() {
 		return zeroValue;
 	}
-
+	
+	/**
+	 * Checks whether the given call is a call to Executor.execute() or
+	 * AccessController.doPrivileged() and whether the callee matches
+	 * the expected method signature
+	 * @param ie The invocation expression to check
+	 * @param dest The callee of the given invocation expression
+	 * @return True if the given invocation expression and callee are a valid
+	 * call to Executor.execute() or AccessController.doPrivileged()
+	 */
+	protected boolean isExecutorExecute(InvokeExpr ie, SootMethod dest) {
+		if (ie == null || dest == null)
+			return false;
+		
+		SootMethod ieMethod = ie.getMethod();
+		if (!ieMethod.getName().equals("execute") && !ieMethod.getName().equals("doPrivileged"))
+			return false;
+		
+		final String ieSubSig = ieMethod.getSubSignature();
+		final String calleeSubSig = dest.getSubSignature();
+		
+		if (ieSubSig.equals("void execute(java.lang.Runnable)")
+				&& calleeSubSig.equals("void run()"))
+			return true;
+		
+		if (calleeSubSig.equals("java.lang.Object run()")) {
+			if (ieSubSig.equals("java.lang.Object doPrivileged(java.security.PrivilegedAction)"))
+				return true;
+			if (ieSubSig.equals("java.lang.Object doPrivileged(java.security.PrivilegedAction,"
+					+ "java.security.AccessControlContext)"))
+				return true;
+			if (ieSubSig.equals("java.lang.Object doPrivileged(java.security.PrivilegedExceptionAction)"))
+				return true;
+			if (ieSubSig.equals("java.lang.Object doPrivileged(java.security.PrivilegedExceptionAction,"
+					+ "java.security.AccessControlContext)"))
+				return true;
+		}
+		return false;
+	}
+	
+	/**
+	 * Checks whether the given unit is the start of an exception handler
+	 * @param u The unit to check
+	 * @return True if the given unit is the start of an exception handler,
+	 * otherwise false
+	 */
+	protected boolean isExceptionHandler(Unit u) {
+		if (u instanceof DefinitionStmt) {
+			DefinitionStmt defStmt = (DefinitionStmt) u;
+			return defStmt.getRightOp() instanceof CaughtExceptionRef;
+		}
+		return false;
+	}
+	
+	/**
+	 * Notifies the outbound flow handlers, if any, about the computed
+	 * result abstractions for the current flow function
+	 * @param d1 The abstraction at the beginning of the method
+	 * @param stmt The statement that has just been processed
+	 * @param incoming The incoming abstraction from which the outbound
+	 * ones were computed
+	 * @param outgoing The outbound abstractions to be propagated on
+	 * @param functionType The type of flow function that was computed
+	 * @return The outbound flow abstracions, potentially changed by the
+	 * flow handlers
+	 */
+	protected Set<Abstraction> notifyOutFlowHandlers(Unit stmt,
+			Abstraction d1,
+			Abstraction incoming,
+			Set<Abstraction> outgoing,
+			FlowFunctionType functionType) {
+		if (taintPropagationHandler != null
+				&& outgoing != null
+				&& !outgoing.isEmpty())
+			outgoing = taintPropagationHandler.notifyFlowOut(stmt, d1, incoming, outgoing,
+						interproceduralCFG(), functionType);
+		return outgoing;
+	}
+	
 }

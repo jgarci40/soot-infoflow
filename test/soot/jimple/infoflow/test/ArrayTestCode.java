@@ -39,7 +39,6 @@ public class ArrayTestCode {
 		cm.publish(taintedElement);
 	}
 	
-	
 	public void concreteWriteReadSamePosTest(){
 		String tainted = TelephonyManager.getDeviceId();
 		String[] array = new String[2];
@@ -174,5 +173,42 @@ public class ArrayTestCode {
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(array[0]);
 	}
-
+	
+	public void arrayLengthTest() {
+		String tainted = TelephonyManager.getDeviceId();		
+		char[] array = tainted.toCharArray();
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(array.length);
+	}
+	
+	public void arrayLengthTest2() {
+		char[] array = new char[TelephonyManager.getIMEI()];
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(array.length);
+	}
+	
+	public void arrayLengthTest3() {
+		String[] array = new String[TelephonyManager.getIMEI()];
+		array[0] = TelephonyManager.getDeviceId();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(array.length);
+		cm.publish(array[0]);
+	}
+	
+	public void arrayLengthTest4() {
+		String[] array = new String[TelephonyManager.getIMEI()];
+		array[0] = "foo";
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(array[0]);
+	}
+	
+	public void arrayLengthTest5() {
+		String[] array = new String[TelephonyManager.getIMEI()];
+		String[] array2 = array;
+		array2[0] = "foo";
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(array[0]);
+	}
+	
 }

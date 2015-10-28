@@ -125,6 +125,21 @@ public class TypeTestCode {
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(newStr);
 	}
+	
+	private static A a;
+	
+	public void classCastTest4() {
+		String tainted = TelephonyManager.getDeviceId();
+		B b = new B();
+		b.data = tainted;
+		a = b;
+		
+		B b2 = (B) a;
+		String newStr = b2.bar();
+		
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(newStr);
+	}	
 
 	public void instanceofTest1() {
 		String tainted = TelephonyManager.getDeviceId();
@@ -469,5 +484,66 @@ public class TypeTestCode {
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish((Double) dblLong);		
 	}
+	
+	public void doubleToIntTest1() {
+		double longitude = LocationManager.getLongitude();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish((int) longitude);
+	}
+	
+	private abstract class D extends A {
+		
+		public void doTaint() {
+			transform(TelephonyManager.getDeviceId());
+		}
+		
+		protected abstract void transform(String str);
+		
+	}
+	
+	private class E extends D {
+		
+		@Override
+		protected void transform(String str) {
+			this.data = str;
+		}
+		
+	}
+	
+	private class F extends D {
+		
+		String str;
+		
+		@Override
+		protected void transform(String str) {
+			this.str = str;
+		}
+		
+	}
+	
+	public void followReturnsPastSeedsTest1() {
+		E e = new E();
+		doTaintX(e);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(e.data);
+		B b = new B();
+		doTaintX(b);
+		cm.publish(b.data);
+	}
 
+	private void doTaintX(A a) {
+		((D) a).doTaint();
+	}
+	
+	public void followReturnsPastSeedsTest2() {
+		E e = new E();
+		doTaintX(e);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(e.data);
+		F f = new F();
+		doTaintX(f);
+		cm.publish(f.data);
+		cm.publish(f.str);
+	}
+	
 }

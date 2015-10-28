@@ -13,12 +13,14 @@ package soot.jimple.infoflow.taintWrappers;
 import java.util.Collections;
 import java.util.Set;
 
+import soot.SootMethod;
 import soot.Value;
+import soot.jimple.AssignStmt;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.Stmt;
+import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AccessPath;
-import soot.jimple.infoflow.solver.IInfoflowCFG;
-import soot.jimple.internal.JAssignStmt;
+import soot.jimple.infoflow.data.AccessPathFactory;
 
 /**
  * Taints the return value of a method call if one of the parameter values
@@ -28,10 +30,9 @@ import soot.jimple.internal.JAssignStmt;
  *
  */
 public class IdentityTaintWrapper extends AbstractTaintWrapper {
-
+	
 	@Override
-	public Set<AccessPath> getTaintsForMethod(Stmt stmt, AccessPath taintedPath,
-			IInfoflowCFG icfg) {
+	public Set<AccessPath> getTaintsForMethodInternal(Stmt stmt, AccessPath taintedPath) {
 		assert stmt.containsInvokeExpr();
 		
 		// For the moment, we don't implement static taints on wrappers. Pass it on
@@ -44,23 +45,23 @@ public class IdentityTaintWrapper extends AbstractTaintWrapper {
 			
 			// If the base object is tainted, the return value is always tainted
 			if (taintedPath.getPlainValue().equals(iiExpr.getBase()))
-				if (stmt instanceof JAssignStmt)
-					return Collections.singleton(new AccessPath(((JAssignStmt)stmt).getLeftOp(),
-							taintedPath.getTaintSubFields()));
+				if (stmt instanceof AssignStmt)
+					return Collections.singleton(AccessPathFactory.v().createAccessPath(
+							((AssignStmt) stmt).getLeftOp(), taintedPath.getTaintSubFields()));
 		}
 			
 		// If one of the parameters is tainted, the return value is tainted, too
 		for (Value param : stmt.getInvokeExpr().getArgs())
 			if (taintedPath.getPlainValue().equals(param))
-				if (stmt instanceof JAssignStmt)
-					return Collections.singleton(new AccessPath(((JAssignStmt)stmt).getLeftOp(),
-							taintedPath.getTaintSubFields()));
+				if (stmt instanceof AssignStmt)
+					return Collections.singleton(AccessPathFactory.v().createAccessPath(
+							((AssignStmt) stmt).getLeftOp(), taintedPath.getTaintSubFields()));
 		
 		return Collections.emptySet();
 	}
 
 	@Override
-	public boolean isExclusiveInternal(Stmt stmt, AccessPath taintedPath, IInfoflowCFG icfg) {
+	public boolean isExclusiveInternal(Stmt stmt, AccessPath taintedPath) {
 		assert stmt.containsInvokeExpr();
 		
 		// We are exclusive if the base object is tainted
@@ -78,4 +79,21 @@ public class IdentityTaintWrapper extends AbstractTaintWrapper {
 		return false;
 	}
 
+	@Override
+	public boolean supportsCallee(SootMethod method) {
+		return true;
+	}
+
+	@Override
+	public boolean supportsCallee(Stmt callSite) {
+		return true;
+	}
+
+	@Override
+	public Set<Abstraction> getAliasesForMethod(Stmt stmt, Abstraction d1,
+			Abstraction taintedPath) {
+		// We do not provide any aliases
+		return null;
+	}
+	
 }

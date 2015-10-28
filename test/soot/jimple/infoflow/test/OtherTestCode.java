@@ -10,6 +10,8 @@
  ******************************************************************************/
 package soot.jimple.infoflow.test;
 
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.LinkedList;
 
 import soot.jimple.infoflow.test.android.AccountManager;
@@ -480,7 +482,8 @@ public class OtherTestCode {
 	}
 	
 	private String id(String data) {
-		return data;
+		String foo = data;
+		return foo;
 	}
 	
 	public void pathSkipTest3() {
@@ -563,6 +566,88 @@ public class OtherTestCode {
 		recurse(deviceId2, deviceId);
 		ConnectionManager cm = new ConnectionManager();
 		cm.publish(deviceId2);
+	}
+	
+	private class MyAction implements PrivilegedAction<O> {
+
+		private String data = "";
+		
+		@Override
+		public O run() {
+			ConnectionManager cm = new ConnectionManager();
+			cm.publish(data);
+			return new O();
+		}
+		
+	}
+	
+	public void doPrivilegedTest1() {
+		MyAction action = new MyAction();
+		action.data = TelephonyManager.getDeviceId();
+		AccessController.doPrivileged(action);
+	}
+	
+	public void doPrivilegedTest2() {
+		MyAction action = new MyAction();
+		action.data = TelephonyManager.getDeviceId();
+		AccessController.doPrivileged(action, null);
+	}
+
+	private class MyHeapAction implements PrivilegedAction<O> {
+
+		private String data = "";
+		
+		@Override
+		public O run() {
+			this.data = TelephonyManager.getDeviceId();
+			return new O();
+		}
+		
+	}
+
+	public void doPrivilegedTest3() {
+		MyHeapAction action = new MyHeapAction();
+		AccessController.doPrivileged(action, null);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(action.data);
+	}
+	
+	public void multiSinkTest1() {
+		String imei = TelephonyManager.getDeviceId();
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(imei);
+		cm.publish(imei);
+	}
+
+	public void multiSinkTest2() {
+		String imei = TelephonyManager.getDeviceId();
+		doLeak(imei);		
+		doLeak(imei);
+	}
+
+	private void doLeak(String imei) {
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(imei);
+	}
+	
+	public void contextSensitivityTest1() {
+		String tainted1 = TelephonyManager.getDeviceId();
+		String tainted2 = new AccountManager().getPassword();
+		String str1 = id(tainted1);
+		String str2 = id(tainted2);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(str1);
+		System.out.println(str2);
+	}
+	
+	public void contextSensitivityTest2() {
+		String tainted1 = TelephonyManager.getDeviceId();
+		String tainted2 = new AccountManager().getPassword();
+		String str1 = id2(tainted1);
+		String str2 = id2(tainted2);
+		ConnectionManager cm = new ConnectionManager();
+		cm.publish(str1);
+		System.out.println(str2);
 	}
 	
 }
