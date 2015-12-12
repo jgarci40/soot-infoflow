@@ -179,6 +179,7 @@ public abstract class AbstractInfoflow implements IInfoflow {
 				
 		Options.v().set_no_bodies_for_excluded(true);
 		Options.v().set_allow_phantom_refs(true);
+		Options.v().set_keep_offset(true);
 		if (logger.isDebugEnabled())
 			Options.v().set_output_format(Options.output_format_jimple);
 		else
