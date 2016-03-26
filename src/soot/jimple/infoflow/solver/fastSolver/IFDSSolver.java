@@ -42,6 +42,7 @@ import soot.SootMethod;
 import soot.Unit;
 import soot.jimple.infoflow.collect.ConcurrentHashSet;
 import soot.jimple.infoflow.collect.MyConcurrentHashMap;
+import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.solver.IMemoryManager;
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
 
@@ -295,14 +296,19 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 							FlowFunction<D> retFunction = flowFunctions.getReturnFlowFunction(n, sCalledProcN, eP, retSiteN);
 							//for each target value of the function
 							for(D d5: computeReturnFlowFunction(retFunction, d3, d4, n, Collections.singleton(d1))) {
+								if (memoryManager != null)
+									d5 = memoryManager.handleGeneratedMemoryObject(d4, d5);
+								
 								// If we have not changed anything in the callee, we do not need the facts
 								// from there. Even if we change something: If we don't need the concrete
 								// path, we can skip the callee in the predecessor chain
 								D d5p = d5;
 								if (d5.equals(d2))
 									d5p = d2;
-								else if (setJumpPredecessors)
-									d5p.setPredecessor(d3);
+								else if (setJumpPredecessors && d5p != d2) {
+									d5p = d5p.clone();
+									d5p.setPredecessor(d2);
+								}
 								propagate(d1, retSiteN, d5p, n, false, true);
 							}
 						}
@@ -401,8 +407,10 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 							D d5p = d5;
 							if (d5.equals(predVal))
 								d5p = predVal;
-							else if (setJumpPredecessors)
-								d5p.setPredecessor(d1);
+							else if (setJumpPredecessors && d5p != predVal) {
+								d5p = d5p.clone();
+								d5p.setPredecessor(predVal);
+							}
 							propagate(d4, retSiteC, d5p, c, false, true);
 						}
 					}
@@ -466,7 +474,7 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 			FlowFunction<D> flowFunction = flowFunctions.getNormalFlowFunction(n,m);
 			Set<D> res = computeNormalFlowFunction(flowFunction, d1, d2);
 			for (D d3 : res) {
-				if (memoryManager != null)
+				if (memoryManager != null && d2 != d3)
 					d3 = memoryManager.handleGeneratedMemoryObject(d2, d3);
 				if (d3 != null)
 					propagate(d1, m, d3, null, false);
@@ -524,6 +532,8 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 		if (memoryManager != null) {
 			sourceVal = memoryManager.handleMemoryObject(sourceVal);
 			targetVal = memoryManager.handleMemoryObject(targetVal);
+			if (sourceVal == null || targetVal == null)
+				return;
 		}
 		
 		final PathEdge<N,D> edge = new PathEdge<N,D>(sourceVal, target, targetVal);
@@ -578,7 +588,7 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 		Set<Pair<N, D>> summaries = endSummary.putIfAbsentElseGet
 				(new Pair<M, D>(m, d1), new ConcurrentHashSet<Pair<N, D>>());
 		return summaries.add(new Pair<N, D>(eP, d2));
-	}	
+	}
 	
 	protected Map<N, Map<D, D>> incoming(D d1, M m) {
 		Map<N, Map<D, D>> map = incoming.get(new Pair<M, D>(m, d1));
@@ -690,6 +700,14 @@ public class IFDSSolver<N,D extends FastSolverLinkedNode<D, N>,M,I extends BiDiI
 	 */
 	public void setMemoryManager(IMemoryManager<D> memoryManager) {
 		this.memoryManager = memoryManager;
+	}
+	
+	/**
+	 * Gets the memory manager used by this solver to reduce memory consumption
+	 * @return The memory manager registered with this solver
+	 */	
+	public IMemoryManager<D> getMemoryManager() {
+		return this.memoryManager;
 	}
 
 }

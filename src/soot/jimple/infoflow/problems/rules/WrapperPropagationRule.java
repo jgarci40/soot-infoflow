@@ -13,6 +13,7 @@ import soot.jimple.infoflow.aliasing.Aliasing;
 import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AccessPath;
 import soot.jimple.infoflow.problems.TaintPropagationResults;
+import soot.jimple.infoflow.source.SourceInfo;
 import soot.jimple.infoflow.util.ByReferenceBoolean;
 import soot.jimple.infoflow.util.TypeUtils;
 
@@ -81,6 +82,15 @@ public class WrapperPropagationRule extends AbstractTaintPropagationRule {
 				return null;
 		}
 		
+		// Do not apply the taint wrapper to statements that are sources on their own
+		if (!getManager().getConfig().getInspectSources()) {
+			// Check whether this can be a source at all
+			final SourceInfo sourceInfo = getManager().getSourceSinkManager() != null
+					? getManager().getSourceSinkManager().getSourceInfo(iStmt, getManager().getICFG()) : null;
+			if (sourceInfo != null)
+				return null;
+		}
+		
 		Set<Abstraction> res = getManager().getTaintWrapper().getTaintsForMethod(iStmt, d1, source);
 		if(res != null) {
 			Set<Abstraction> resWithAliases = new HashSet<>(res);
@@ -105,7 +115,7 @@ public class WrapperPropagationRule extends AbstractTaintPropagationRule {
 					if (!taintedValueOverwritten)
 						if (taintsStaticField
 								|| (taintsObjectValue && abs.getAccessPath().getTaintSubFields())
-								|| getAliasing().canHaveAliases(iStmt, val.getPlainValue(), abs))
+								|| Aliasing.canHaveAliases(iStmt, val.getPlainValue(), abs))
 							getAliasing().computeAliases(d1, iStmt, val.getPlainValue(), resWithAliases,
 									getManager().getICFG().getMethodOf(iStmt), abs);
 				}

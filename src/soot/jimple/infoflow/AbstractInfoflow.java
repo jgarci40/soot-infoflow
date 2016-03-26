@@ -72,8 +72,11 @@ public abstract class AbstractInfoflow implements IInfoflow {
      */
     public AbstractInfoflow(BiDirICFGFactory icfgFactory,
     		String androidPath, boolean forceAndroidJar) {
-    	if (icfgFactory == null)
-    		this.icfgFactory = new DefaultBiDiICFGFactory();
+    	if (icfgFactory == null) {
+    		DefaultBiDiICFGFactory factory = new DefaultBiDiICFGFactory();
+    		factory.setIsAndroid(androidPath != null && !androidPath.isEmpty());
+    		this.icfgFactory = factory;
+    	}
     	else
     		this.icfgFactory = icfgFactory;
 		this.androidPath = androidPath;
@@ -218,6 +221,7 @@ public abstract class AbstractInfoflow implements IInfoflow {
 			case RTA:
 				Options.v().setPhaseOption("cg.spark", "on");
 				Options.v().setPhaseOption("cg.spark", "rta:true");
+				Options.v().setPhaseOption("cg.spark", "on-fly-cg:false");
 				Options.v().setPhaseOption("cg.spark", "string-constants:true");
 				break;
 			case VTA:

@@ -32,12 +32,14 @@ public class SourcePropagationRule extends AbstractTaintPropagationRule {
 			Abstraction source, Stmt stmt, ByReferenceBoolean killSource,
 			ByReferenceBoolean killAll) {
 		if (source == getZeroValue()) {
+			// Check whether this can be a source at all
+			final SourceInfo sourceInfo = getManager().getSourceSinkManager() != null
+					? getManager().getSourceSinkManager().getSourceInfo(stmt, getManager().getICFG()) : null;
+					
 			// We never propagate zero facts onwards
 			killSource.value = true;
 			
 			// Is this a source?
-			final SourceInfo sourceInfo = getManager().getSourceSinkManager() != null
-					? getManager().getSourceSinkManager().getSourceInfo(stmt, getManager().getICFG()) : null;
 			if (sourceInfo != null && !sourceInfo.getAccessPaths().isEmpty()) {
 				Set<Abstraction> res = new HashSet<>();
 				Value leftOp = stmt instanceof DefinitionStmt ? ((DefinitionStmt) stmt).getLeftOp() : null;
@@ -51,7 +53,7 @@ public class SourcePropagationRule extends AbstractTaintPropagationRule {
 					
 					// Compute the aliases
 					if (leftOp != null)
-						if (getAliasing().canHaveAliases(stmt, leftOp, abs))
+						if (Aliasing.canHaveAliases(stmt, leftOp, abs))
 							getAliasing().computeAliases(d1, stmt, leftOp,
 									res, getManager().getICFG().getMethodOf(stmt), abs);
 					

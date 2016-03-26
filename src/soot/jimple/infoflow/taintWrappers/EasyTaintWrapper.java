@@ -40,6 +40,7 @@ import soot.jimple.infoflow.data.Abstraction;
 import soot.jimple.infoflow.data.AccessPath;
 import soot.jimple.infoflow.data.AccessPathFactory;
 import soot.jimple.infoflow.util.SootMethodRepresentationParser;
+import soot.jimple.infoflow.util.SystemClassHandler;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -235,9 +236,10 @@ public class EasyTaintWrapper extends AbstractTaintWrapper implements Cloneable 
 				// tainted values
 				if (stmt instanceof DefinitionStmt) {
 					DefinitionStmt def = (DefinitionStmt) stmt;
-
+					
 					// Check for exclusions
-					if (wrapType != MethodWrapType.Exclude)
+					if (wrapType != MethodWrapType.Exclude
+							&& SystemClassHandler.isTaintVisible(taintedPath, method))
 						taints.add(AccessPathFactory.v().createAccessPath(def.getLeftOp(), true));
 				}
 
