@@ -6,10 +6,11 @@
               as the first entry and export the buildfile again. --><project basedir="." default="build" name="soot-infoflow">
     <property environment="env"/>
     <property name="ECLIPSE_HOME" value="../../Applications/eclipse-jee-luna/"/>
+    <property name="adlib-analyzer.location" value="../../../../media/joshua/ext4_backup/home/joshua/workspace/adlib-analyzer"/>
     <property name="pathexecutor.location" value="../../../../media/joshua/ext4_backup/home/joshua/workspace/pathexecutor"/>
+    <property name="revealdroid.location" value="../revealdroid"/>
     <property name="seal-utils.location" value="../../../../media/joshua/ext4_backup/home/joshua/workspace/seal-utils"/>
     <property name="soot-infoflow-android.location" value="../soot-infoflow-android"/>
-    <property name="uic_exploit_gen.location" value="../../../../media/joshua/ext4_backup/home/joshua/workspace/uic_exploit_gen"/>
     <property name="heros.location" value="../heros"/>
     <property name="jasmin.location" value="../jasmin"/>
     <property name="soot.location" value="../soot"/>
@@ -192,8 +193,20 @@
         </javac>
     </target>
     <target description="Build all projects which reference this project. Useful to propagate changes." name="build-refprojects">
+        <ant antfile="build.xml" dir="${adlib-analyzer.location}" inheritAll="false" target="clean"/>
+        <ant antfile="build.xml" dir="${adlib-analyzer.location}" inheritAll="false" target="build">
+            <propertyset>
+                <propertyref name="build.compiler"/>
+            </propertyset>
+        </ant>
         <ant antfile="build.xml" dir="${pathexecutor.location}" inheritAll="false" target="clean"/>
         <ant antfile="build.xml" dir="${pathexecutor.location}" inheritAll="false" target="build">
+            <propertyset>
+                <propertyref name="build.compiler"/>
+            </propertyset>
+        </ant>
+        <ant antfile="build.xml" dir="${revealdroid.location}" inheritAll="false" target="clean"/>
+        <ant antfile="build.xml" dir="${revealdroid.location}" inheritAll="false" target="build">
             <propertyset>
                 <propertyref name="build.compiler"/>
             </propertyset>
@@ -206,12 +219,6 @@
         </ant>
         <ant antfile="build.xml" dir="${soot-infoflow-android.location}" inheritAll="false" target="clean"/>
         <ant antfile="build.xml" dir="${soot-infoflow-android.location}" inheritAll="false" target="build">
-            <propertyset>
-                <propertyref name="build.compiler"/>
-            </propertyset>
-        </ant>
-        <ant antfile="build.xml" dir="${uic_exploit_gen.location}" inheritAll="false" target="clean"/>
-        <ant antfile="build.xml" dir="${uic_exploit_gen.location}" inheritAll="false" target="build">
             <propertyset>
                 <propertyref name="build.compiler"/>
             </propertyset>
