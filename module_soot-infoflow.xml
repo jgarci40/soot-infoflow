@@ -26,6 +26,8 @@
     <pathelement location="${basedir}/../soot-infoflow/lib/j2ee.jar"/>
     <pathelement location="${basedir}/../soot-infoflow/lib/slf4j-api-1.7.5.jar"/>
     <pathelement location="${idea.home}/lib/junit-4.12.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/junit.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/org.hamcrest.core_1.3.0.jar"/>
   </path>
   
   <path id="soot-infoflow.runtime.production.module.classpath">
@@ -36,6 +38,8 @@
     <pathelement location="${basedir}/../soot-infoflow/lib/j2ee.jar"/>
     <pathelement location="${basedir}/../soot-infoflow/lib/slf4j-api-1.7.5.jar"/>
     <pathelement location="${idea.home}/lib/junit-4.12.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/junit.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/org.hamcrest.core_1.3.0.jar"/>
   </path>
   
   <path id="soot-infoflow.module.classpath">
@@ -50,6 +54,8 @@
     <pathelement location="${basedir}/../soot-infoflow/lib/j2ee.jar"/>
     <pathelement location="${basedir}/../soot-infoflow/lib/slf4j-api-1.7.5.jar"/>
     <pathelement location="${idea.home}/lib/junit-4.12.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/junit.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/org.hamcrest.core_1.3.0.jar"/>
   </path>
   
   <path id="soot-infoflow.runtime.module.classpath">
@@ -60,6 +66,8 @@
     <pathelement location="${basedir}/../soot-infoflow/lib/j2ee.jar"/>
     <pathelement location="${basedir}/../soot-infoflow/lib/slf4j-api-1.7.5.jar"/>
     <pathelement location="${idea.home}/lib/junit-4.12.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/junit.jar"/>
+    <pathelement location="${basedir}/../soot-infoflow/lib/org.hamcrest.core_1.3.0.jar"/>
   </path>
   
   
@@ -82,15 +90,15 @@
   
   <target name="compile.module.soot-infoflow" depends="compile.module.soot-infoflow.production,compile.module.soot-infoflow.tests" description="Compile module soot-infoflow"/>
   
-  <target name="compile.module.soot-infoflow.production" depends="register.custom.compilers,compile.module.soot,compile.module.heros" description="Compile module soot-infoflow; production classes">
+  <target name="compile.module.soot-infoflow.production" depends="compile.module.soot,compile.module.heros" description="Compile module soot-infoflow; production classes">
     <mkdir dir="${soot-infoflow.output.dir}"/>
-    <javac2 destdir="${soot-infoflow.output.dir}" debug="${compiler.debug}" nowarn="${compiler.generate.no.warnings}" memorymaximumsize="${compiler.max.memory}" fork="true" executable="${module.jdk.bin.soot-infoflow}/javac">
+    <javac destdir="${soot-infoflow.output.dir}" debug="${compiler.debug}" nowarn="${compiler.generate.no.warnings}" memorymaximumsize="${compiler.max.memory}" fork="true" executable="${module.jdk.bin.soot-infoflow}/javac">
       <compilerarg line="${compiler.args.soot-infoflow}"/>
       <bootclasspath refid="soot-infoflow.module.bootclasspath"/>
       <classpath refid="soot-infoflow.module.production.classpath"/>
       <src refid="soot-infoflow.module.sourcepath"/>
       <patternset refid="excluded.from.compilation.soot-infoflow"/>
-    </javac2>
+    </javac>
     
     <copy todir="${soot-infoflow.output.dir}">
       <fileset dir="${module.soot-infoflow.basedir}/src">
@@ -108,7 +116,7 @@
     </copy>
   </target>
   
-  <target name="compile.module.soot-infoflow.tests" depends="register.custom.compilers,compile.module.soot-infoflow.production" description="compile module soot-infoflow; test classes" unless="skip.tests"/>
+  <target name="compile.module.soot-infoflow.tests" depends="compile.module.soot-infoflow.production" description="compile module soot-infoflow; test classes" unless="skip.tests"/>
   
   <target name="clean.module.soot-infoflow" description="cleanup module">
     <delete dir="${soot-infoflow.output.dir}"/>
