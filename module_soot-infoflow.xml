@@ -2,9 +2,9 @@
 <project name="module_soot-infoflow" default="compile.module.soot-infoflow">
   <dirname property="module.soot-infoflow.basedir" file="${ant.file.module_soot-infoflow}"/>
   
-  <property name="module.jdk.home.soot-infoflow" value="${jdk.home.1.8}"/>
-  <property name="module.jdk.bin.soot-infoflow" value="${jdk.bin.1.8}"/>
-  <property name="module.jdk.classpath.soot-infoflow" value="jdk.classpath.1.8"/>
+  <property name="module.jdk.home.soot-infoflow" value="${jdk.home.1.80.0_102}"/>
+  <property name="module.jdk.bin.soot-infoflow" value="${jdk.bin.1.80.0_102}"/>
+  <property name="module.jdk.classpath.soot-infoflow" value="jdk.classpath.1.80.0_102"/>
   
   <property name="compiler.args.soot-infoflow" value="-encoding UTF-8 -source 8 -target 8 ${compiler.args}"/>
   
