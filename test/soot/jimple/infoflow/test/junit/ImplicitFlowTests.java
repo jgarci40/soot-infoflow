@@ -396,6 +396,7 @@ public class ImplicitFlowTests extends JUnitTests {
 				excludeList.add("javax.");
 				options.set_exclude(excludeList);
 				options.set_prepend_classpath(false);
+				Options.v().set_ignore_classpath_errors(true);
 			}
 			
 		});
@@ -422,6 +423,7 @@ public class ImplicitFlowTests extends JUnitTests {
 				excludeList.add("javax.");
 				options.set_exclude(excludeList);
 				options.set_prepend_classpath(false);
+				Options.v().set_ignore_classpath_errors(true);
 			}
 			
 		});
@@ -472,6 +474,7 @@ public class ImplicitFlowTests extends JUnitTests {
 				excludeList.add("javax.");
 				options.set_exclude(excludeList);
 				options.set_prepend_classpath(false);
+				Options.v().set_ignore_classpath_errors(true);
 			}
 			
 		});
@@ -498,6 +501,7 @@ public class ImplicitFlowTests extends JUnitTests {
 				excludeList.add("javax.");
 				options.set_exclude(excludeList);
 				options.set_prepend_classpath(false);
+				Options.v().set_ignore_classpath_errors(true);
 			}
 			
 		});
@@ -656,6 +660,30 @@ public class ImplicitFlowTests extends JUnitTests {
 	    epoints.add("<soot.jimple.infoflow.test.ImplicitFlowTestCode: void arrayIndexTest1()>");
 		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
 		checkInfoflow(infoflow, 1);
+	}
+
+	@Test(timeout=300000)
+	public void exceptionTest1(){
+		IInfoflow infoflow = initInfoflow();
+		infoflow.getConfig().setEnableImplicitFlows(true);
+		infoflow.getConfig().setInspectSinks(false);
+
+		List<String> epoints = new ArrayList<String>();
+	    epoints.add("<soot.jimple.infoflow.test.ImplicitFlowTestCode: void exceptionTest1()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
+		checkInfoflow(infoflow, 1);
+	}
+
+	@Test(timeout=300000)
+	public void exceptionTest4(){
+		IInfoflow infoflow = initInfoflow();
+		infoflow.getConfig().setEnableImplicitFlows(true);
+		infoflow.getConfig().setInspectSinks(false);
+
+		List<String> epoints = new ArrayList<String>();
+	    epoints.add("<soot.jimple.infoflow.test.ImplicitFlowTestCode: void exceptionTest4()>");
+		infoflow.computeInfoflow(appPath, libPath, epoints, sources, sinks);
+		negativeCheckInfoflow(infoflow);
 	}
 
 }

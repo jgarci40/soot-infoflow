@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import soot.RefType;
+import soot.SootMethod;
 import soot.jimple.DefinitionStmt;
 import soot.jimple.InstanceInvokeExpr;
 import soot.jimple.Stmt;
@@ -32,7 +33,8 @@ public class WrapperPropagationRule extends AbstractTaintPropagationRule {
 	
 	@Override
 	public Collection<Abstraction> propagateNormalFlow(Abstraction d1,
-			Abstraction source, Stmt stmt, ByReferenceBoolean killSource,
+			Abstraction source, Stmt stmt, Stmt destStmt,
+			ByReferenceBoolean killSource,
 			ByReferenceBoolean killAll) {
 		return null;
 	}
@@ -104,7 +106,7 @@ public class WrapperPropagationRule extends AbstractTaintPropagationRule {
 					final AccessPath val = abs.getAccessPath();
 					boolean taintsObjectValue = val.getBaseType() instanceof RefType
 							&& abs.getAccessPath().getBaseType() instanceof RefType
-							&& !TypeUtils.isStringType(val.getBaseType());
+							&& (!TypeUtils.isStringType(val.getBaseType()) || val.getCanHaveImmutableAliases());
 					boolean taintsStaticField = getManager().getConfig().getEnableStaticFieldTracking()
 							&& abs.getAccessPath().isStaticFieldRef();
 						
@@ -154,7 +156,8 @@ public class WrapperPropagationRule extends AbstractTaintPropagationRule {
 
 	@Override
 	public Collection<Abstraction> propagateCallFlow(Abstraction d1,
-			Abstraction source, Stmt stmt, ByReferenceBoolean killAll) {
+			Abstraction source, Stmt stmt, SootMethod dest,
+			ByReferenceBoolean killAll) {
 		// If we have an exclusive taint wrapper for the target
 		// method, we do not perform an own taint propagation. 
 		if (getManager().getTaintWrapper() != null

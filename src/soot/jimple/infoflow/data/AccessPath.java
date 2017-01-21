@@ -48,6 +48,8 @@ public class AccessPath implements Cloneable {
 	private final boolean taintSubFields;
 	private final boolean cutOffApproximation;
 	private final ArrayTaintType arrayTaintType;
+
+	private final boolean canHaveImmutableAliases;
 	
 	private int hashCode = 0;
 	
@@ -67,12 +69,14 @@ public class AccessPath implements Cloneable {
 		this.taintSubFields = true;
 		this.cutOffApproximation = false;
 		this.arrayTaintType = ArrayTaintType.ContentsAndLength;
+		this.canHaveImmutableAliases = false;
 	}
-	
+
 	AccessPath(Local val, SootField[] appendingFields, Type valType,
 			Type[] appendingFieldTypes, boolean taintSubFields,
 			boolean isCutOffApproximation,
-			ArrayTaintType arrayTaintType) {		
+			ArrayTaintType arrayTaintType,
+			boolean canHaveImmutableAliases) {
 		this.value = val;
 		this.fields = appendingFields;
 		this.baseType = valType;
@@ -80,6 +84,7 @@ public class AccessPath implements Cloneable {
 		this.taintSubFields = taintSubFields;
 		this.cutOffApproximation = isCutOffApproximation;
 		this.arrayTaintType = arrayTaintType;
+		this.canHaveImmutableAliases = canHaveImmutableAliases;
 	}
 	
 	/**
@@ -90,6 +95,9 @@ public class AccessPath implements Cloneable {
 	 * path
 	 */
 	public static boolean canContainValue(Value val) {
+		if (val == null)
+			return false;
+		
 		return val instanceof Local
 				|| val instanceof InstanceFieldRef
 				|| val instanceof StaticFieldRef
@@ -117,7 +125,14 @@ public class AccessPath implements Cloneable {
 			return null;
 		return fields[0];
 	}
-
+	
+	/**
+	 * Checks whether the first field of this access path matches the given
+	 * field
+	 * @param field The field to check against
+	 * @return True if this access path has a non-empty field list and the first
+	 * field matches the given one, otherwise false
+	 */
 	public boolean firstFieldMatches(SootField field) {
 		if (fields == null || fields.length == 0)
 			return false;
@@ -190,6 +205,9 @@ public class AccessPath implements Cloneable {
 			return false;
 		
 		if (this.arrayTaintType != other.arrayTaintType)
+			return false;
+
+		if (this.canHaveImmutableAliases != other.canHaveImmutableAliases)
 			return false;
 		
 		assert this.hashCode() == obj.hashCode();
@@ -280,7 +298,7 @@ public class AccessPath implements Cloneable {
 		
 		return AccessPathFactory.v().createAccessPath(val, fields, newType,
 				fieldTypes, this.taintSubFields,
-				cutFirstField, reduceBases, arrayTaintType);
+				cutFirstField, reduceBases, arrayTaintType, this.canHaveImmutableAliases);
 	}
 	
 	@Override
@@ -290,7 +308,7 @@ public class AccessPath implements Cloneable {
 			return this;
 		
 		AccessPath a = new AccessPath(value, fields, baseType, fieldTypes,
-				taintSubFields, cutOffApproximation, arrayTaintType);
+				taintSubFields, cutOffApproximation, arrayTaintType, canHaveImmutableAliases);
 		assert a.equals(this);
 		return a;
 	}
@@ -422,7 +440,7 @@ public class AccessPath implements Cloneable {
 			newTypes = null;
 		}
 		return new AccessPath(value, newFields, baseType, newTypes,
-				taintSubFields, cutOffApproximation, arrayTaintType);
+				taintSubFields, cutOffApproximation, arrayTaintType, canHaveImmutableAliases);
 	}
 	
 	/**
@@ -461,6 +479,41 @@ public class AccessPath implements Cloneable {
 	 */
 	public ArrayTaintType getArrayTaintType() {
 		return this.arrayTaintType;
+	}
+	
+	/**
+	 * Checks whether this access path starts with the given value
+	 * @param val The value that is a potential prefix of the current access path
+	 * @return True if this access paths with the given value (i.e., the given
+	 * value is a prefix of this access path), otherwise false
+	 */
+	public boolean startsWith(Value val) {
+		// Filter out constants, etc.
+		if (!canContainValue(val))
+			return false;
+		
+		// Check the different types of values we can have
+		if (val instanceof Local && this.value == val)
+			return true;
+		else if (val instanceof StaticFieldRef)
+			return this.value == null && this.fields != null && this.fields.length > 0
+					&& this.fields[0] == ((StaticFieldRef) val).getField();
+		else if (val instanceof InstanceFieldRef) {
+			InstanceFieldRef iref = (InstanceFieldRef) val;
+			return this.value == iref.getBase() && this.fields != null
+					&& this.fields.length > 0 && this.fields[0] == iref.getField();
+		}
+		else
+			// Some unsupported value type
+			return false;
+	}
+
+	/**
+	 * Returns whether the tainted object can have immutable aliases.
+	 * @return true if the tainted object can have immutable aliases.
+	 */
+	public boolean getCanHaveImmutableAliases() {
+		return canHaveImmutableAliases;
 	}
 	
 }

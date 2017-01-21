@@ -80,8 +80,8 @@ public class TypeUtils {
 			return true;
 		
 		// If we have a reference type, we use the Soot hierarchy
-		if (Scene.v().getFastHierarchy().canStoreType(destType, sourceType) // cast-up, i.e. Object to String
-				|| Scene.v().getFastHierarchy().canStoreType(sourceType, destType)) // cast-down, i.e. String to Object
+		if (manager.getHierarchy().canStoreType(destType, sourceType) // cast-up, i.e. Object to String
+				|| manager.getHierarchy().canStoreType(sourceType, destType)) // cast-down, i.e. String to Object
 			return true;
 		
 		// If both types are primitive, they can be cast unless a boolean type
@@ -186,7 +186,14 @@ public class TypeUtils {
 		else {
 			// If one type is an array type and the other one is the base type,
 			// we still accept the cast
-			if (tp1 instanceof ArrayType) {
+			if (tp1 instanceof ArrayType && tp2 instanceof ArrayType) {
+				ArrayType at1 = (ArrayType) tp1;
+				ArrayType at2 = (ArrayType) tp2;
+				assert at1.numDimensions == at2.numDimensions;
+				
+				return ArrayType.v(getMorePreciseType(at1.getElementType(), at2.getElementType()), at1.numDimensions);
+			}
+			else if (tp1 instanceof ArrayType) {
 				ArrayType at = (ArrayType) tp1;
 				return getMorePreciseType(at.getElementType(), tp2);
 			}
@@ -247,6 +254,21 @@ public class TypeUtils {
 		if (numDimensions == 0)
 			return t;
 		return ArrayType.v(t, numDimensions);
+	}
+	
+	/**
+	 * Builds a new array of the given type if it is a base type or increments
+	 * the dimensions of the given array by 1 otherwise.
+	 * @param type The base type or incoming array
+	 * @return The resulting array
+	 */
+	public static Type buildArrayOrAddDimension(Type type) {
+		if (type instanceof ArrayType) {
+			ArrayType array = (ArrayType) type;
+			return array.makeArrayType();
+		}
+		else
+			return ArrayType.v(type, 1);
 	}
 	
 }

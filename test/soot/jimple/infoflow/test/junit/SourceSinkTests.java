@@ -23,6 +23,7 @@ import soot.Unit;
 import soot.Value;
 import soot.jimple.DefinitionStmt;
 import soot.jimple.IfStmt;
+import soot.jimple.InvokeExpr;
 import soot.jimple.Stmt;
 import soot.jimple.infoflow.IInfoflow;
 import soot.jimple.infoflow.data.AccessPath;
@@ -155,6 +156,27 @@ public class SourceSinkTests extends JUnitTests {
 		
 	}
 	
+	private final class parameterSourceSSM extends BaseSourceSinkManager {
+
+		@Override
+		public SourceInfo getSourceInfo(Stmt sCallSite,
+				InterproceduralCFG<Unit, SootMethod> cfg) {
+			if (sCallSite.containsInvokeExpr()) {
+				InvokeExpr iexpr = sCallSite.getInvokeExpr();
+				String name = iexpr.getMethod().getName();
+				boolean includeExistingImmutableAliases = name.equals("annotatedSource");
+				if ((name.equals("source") || includeExistingImmutableAliases)
+						&& iexpr.getArgCount() > 0) {
+					AccessPath ap = AccessPathFactory.v().createAccessPath(iexpr.getArg(0), null, null, null, true,
+							false, true, AccessPath.ArrayTaintType.ContentsAndLength, true);
+					return new SourceInfo(ap);
+				}
+			}
+			return null;
+		}
+		
+	}
+	
 	@Test(timeout = 300000)
 	public void fieldTest() {
 		IInfoflow infoflow = initInfoflow();
@@ -236,4 +258,52 @@ public class SourceSinkTests extends JUnitTests {
 		Assert.assertEquals(1, infoflow.getResults().numConnections());
 	}
 	
+	@Test(timeout = 300000)
+	public void parameterSourceTest1() {
+		IInfoflow infoflow = initInfoflow(true);
+		((EasyTaintWrapper) infoflow.getTaintWrapper()).addIncludePrefix("soot.jimple.infoflow.test.SourceSinkTestCode");
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.SourceSinkTestCode: void parameterSourceTest1()>");
+		infoflow.computeInfoflow(appPath, libPath, new DefaultEntryPointCreator(epoints), new parameterSourceSSM());
+		Assert.assertTrue(infoflow.isResultAvailable());
+		Assert.assertEquals(1, infoflow.getResults().size());
+		Assert.assertEquals(1, infoflow.getResults().numConnections());
+	}
+
+	@Test(timeout = 300000)
+	public void parameterSourceTest2() {
+		IInfoflow infoflow = initInfoflow(true);
+		((EasyTaintWrapper) infoflow.getTaintWrapper()).addIncludePrefix("soot.jimple.infoflow.test.SourceSinkTestCode");
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.SourceSinkTestCode: void parameterSourceTest2()>");
+		infoflow.computeInfoflow(appPath, libPath, new DefaultEntryPointCreator(epoints), new parameterSourceSSM());
+		Assert.assertTrue(infoflow.isResultAvailable());
+		Assert.assertEquals(1, infoflow.getResults().size());
+		Assert.assertEquals(1, infoflow.getResults().numConnections());
+	}
+
+	@Test(timeout = 300000)
+	public void parameterSourceTest3() {
+		IInfoflow infoflow = initInfoflow(true);
+		((EasyTaintWrapper) infoflow.getTaintWrapper()).addIncludePrefix("soot.jimple.infoflow.test.SourceSinkTestCode");
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.SourceSinkTestCode: void parameterSourceTest3()>");
+		infoflow.computeInfoflow(appPath, libPath, new DefaultEntryPointCreator(epoints), new parameterSourceSSM());
+		Assert.assertTrue(infoflow.isResultAvailable());
+		Assert.assertEquals(1, infoflow.getResults().size());
+		Assert.assertEquals(1, infoflow.getResults().numConnections());
+	}
+
+	@Test(timeout = 300000)
+	public void parameterSourceTest4() {
+		IInfoflow infoflow = initInfoflow(true);
+		((EasyTaintWrapper) infoflow.getTaintWrapper()).addIncludePrefix("soot.jimple.infoflow.test.SourceSinkTestCode");
+		List<String> epoints = new ArrayList<String>();
+		epoints.add("<soot.jimple.infoflow.test.SourceSinkTestCode: void parameterSourceTest4()>");
+		infoflow.computeInfoflow(appPath, libPath, new DefaultEntryPointCreator(epoints), new parameterSourceSSM());
+		Assert.assertTrue(infoflow.isResultAvailable());
+		Assert.assertEquals(1, infoflow.getResults().size());
+		Assert.assertEquals(1, infoflow.getResults().numConnections());
+	}
+
 }

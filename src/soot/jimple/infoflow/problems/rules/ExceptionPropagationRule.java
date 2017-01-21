@@ -3,6 +3,7 @@ package soot.jimple.infoflow.problems.rules;
 import java.util.Collection;
 import java.util.Collections;
 
+import soot.SootMethod;
 import soot.jimple.CaughtExceptionRef;
 import soot.jimple.DefinitionStmt;
 import soot.jimple.Stmt;
@@ -28,7 +29,8 @@ public class ExceptionPropagationRule extends AbstractTaintPropagationRule {
 
 	@Override
 	public Collection<Abstraction> propagateNormalFlow(Abstraction d1,
-			Abstraction source, Stmt stmt, ByReferenceBoolean killSource,
+			Abstraction source, Stmt stmt, Stmt destStmt,
+			ByReferenceBoolean killSource,
 			ByReferenceBoolean killAll) {
 		// Do not process zero abstractions
 		if (source == getZeroValue())
@@ -83,7 +85,7 @@ public class ExceptionPropagationRule extends AbstractTaintPropagationRule {
 
 	@Override
 	public Collection<Abstraction> propagateCallFlow(Abstraction d1,
-			Abstraction source, Stmt stmt, ByReferenceBoolean killAll) {
+			Abstraction source, Stmt stmt, SootMethod dest, ByReferenceBoolean killAll) {
 		return null;
 	}
 

@@ -18,9 +18,10 @@ import soot.jimple.infoflow.InfoflowConfiguration;
 public class SourceContextAndPath extends SourceContext implements Cloneable {
 	protected List<Abstraction> path = null;
 	protected List<Stmt> callStack = null;
+	protected int neighborCounter = 0;
 	private int hashCode = 0;
 	
-	public SourceContextAndPath(AccessPath value, Stmt stmt) {
+	public SourceContextAndPath(AccessPath value, Stmt stmt) {	
 		this(value, stmt, null);
 	}
 	
@@ -89,8 +90,6 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 					// abstraction, we don't got on with a neighbor
 					if (a.getNeighbors() != null && a.getNeighbors().contains(abs))
 						return null;
-					if (abs.getNeighbors() != null && abs.getNeighbors().contains(a))
-						return null;
 					
 					// If this is exactly the same abstraction as one we have seen
 					// before, we skip it. Otherwise, we would run through loops
@@ -126,6 +125,7 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 			scap.callStack.add(0, abs.getCorrespondingCallSite());
 		}
 		
+		this.neighborCounter = abs.getNeighbors() == null ? 0 : abs.getNeighbors().size();
 		return scap == null ? this : scap;
 	}
 	
@@ -150,6 +150,14 @@ public class SourceContextAndPath extends SourceContext implements Cloneable {
 	 */
 	public boolean isCallStackEmpty() {
 		return this.callStack == null || this.callStack.isEmpty();
+	}
+	
+	public void setNeighborCounter(int counter) {
+		this.neighborCounter = counter;
+	}
+	
+	public int getNeighborCounter() {
+		return this.neighborCounter;
 	}
 	
 	@Override

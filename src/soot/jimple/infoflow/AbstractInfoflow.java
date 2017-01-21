@@ -10,6 +10,7 @@ import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import soot.FastHierarchy;
 import soot.PackManager;
 import soot.Scene;
 import soot.SootClass;
@@ -53,6 +54,7 @@ public abstract class AbstractInfoflow implements IInfoflow {
 	protected final String androidPath;
 	protected final boolean forceAndroidJar;
 	protected IInfoflowConfig sootConfig;
+	protected FastHierarchy hierarchy;
 	
     /**
      * Creates a new instance of the abstract info flow problem
@@ -179,7 +181,7 @@ public abstract class AbstractInfoflow implements IInfoflow {
 		// reset Soot:
 		logger.info("Resetting Soot...");
 		soot.G.reset();
-				
+		
 		Options.v().set_no_bodies_for_excluded(true);
 		Options.v().set_allow_phantom_refs(true);
 		Options.v().set_keep_offset(true);
@@ -209,14 +211,13 @@ public abstract class AbstractInfoflow implements IInfoflow {
 				// SPARK fails due to the missing allocation site and we fall
 				// back to CHA.
 				if (extraSeed == null || extraSeed.isEmpty()) {
-					Options.v().setPhaseOption("cg.spark", "on");
-					Options.v().setPhaseOption("cg.spark", "string-constants:true");
+					setSparkOptions();
+				} else {
+					setChaOptions();
 				}
-				else
-					Options.v().setPhaseOption("cg.cha", "on");
 				break;
 			case CHA:
-				Options.v().setPhaseOption("cg.cha", "on");
+				setChaOptions();
 				break;
 			case RTA:
 				Options.v().setPhaseOption("cg.spark", "on");
@@ -230,8 +231,11 @@ public abstract class AbstractInfoflow implements IInfoflow {
 				Options.v().setPhaseOption("cg.spark", "string-constants:true");
 				break;
 			case SPARK:
-				Options.v().setPhaseOption("cg.spark", "on");
-				Options.v().setPhaseOption("cg.spark", "string-constants:true");
+				setSparkOptions();
+				break;
+			case GEOM:
+				setSparkOptions();
+				setGeomPtaSpecificOptions();
 				break;
 			case OnDemand:
 				// nothing to set here
@@ -282,7 +286,24 @@ public abstract class AbstractInfoflow implements IInfoflow {
 			return;
 		}
 	}
-	
+
+	private void setChaOptions() {
+		Options.v().setPhaseOption("cg.cha", "on");
+	}
+
+	private void setSparkOptions() {
+		Options.v().setPhaseOption("cg.spark", "on");
+		Options.v().setPhaseOption("cg.spark", "string-constants:true");
+	}
+
+	public static void setGeomPtaSpecificOptions() {
+		Options.v().setPhaseOption("cg.spark", "geom-pta:true");
+
+		//Those are default options, not sure whether removing them works.
+		Options.v().setPhaseOption("cg.spark", "geom-encoding:Geom");
+		Options.v().setPhaseOption("cg.spark", "geom-worklist:PQ");
+	}
+
 	@Override
 	public void setSootConfig(IInfoflowConfig config) {
 		sootConfig = config;
@@ -329,6 +350,9 @@ public abstract class AbstractInfoflow implements IInfoflow {
 	        PackManager.v().getPack("wjpp").apply();
 	        PackManager.v().getPack("cg").apply();
 		}
+		
+		// If we don't have a FastHierarchy, we need to create it
+		hierarchy = Scene.v().getOrMakeFastHierarchy();
 		
 		// Run the preprocessors
         for (PreAnalysisHandler tr : preProcessors)
